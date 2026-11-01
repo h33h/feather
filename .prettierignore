@@ -1,0 +1,23 @@
+.git/
+.superpowers/
+.husky/_/
+**/node_modules/
+**/.pnpm-store/
+**/.venv*/
+**/.local-data/
+**/.next*/
+**/.ruff_cache/
+**/coverage/
+**/test-results/
+**/playwright-report/
+**/blob-report/
+**/.impeccable/
+evidence/
+# The iOS project retains its upstream formatting and separate tooling.
+ios/
+web/next-env.d.ts
+web/AGENTS.md
+web/CLAUDE.md
+pnpm-lock.yaml
+# Golden data fixtures are verified using exact raw-byte digests.
+backend/tests/fixtures/

@@ -1,0 +1,327 @@
+/* Shared controls. Feature styles own layout, never redefine these states. */
+.store button.task-button.ui-button,
+.store a.task-link {
+  min-height: var(--control-height);
+  height: auto;
+  padding: var(--space-control) var(--space-field);
+  border-radius: var(--control-radius);
+  font-size: var(--text-label);
+  line-height: var(--line-label);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.store button.ui-button.text-button {
+  min-height: var(--control-target);
+  padding: var(--space-control) 0;
+  background: transparent;
+  color: var(--accent);
+  text-align: left;
+}
+.store button.ui-button.text-button.task-danger,
+.store button.ui-button.text-button.task-danger:hover {
+  background: transparent;
+  color: var(--danger);
+}
+.store button.ui-button.task-danger {
+  background: var(--color-error-fill);
+  color: var(--color-on-error);
+}
+.store button.ui-button.task-danger:hover {
+  background: var(--color-error-fill-hover);
+}
+.store button.ui-button:disabled,
+.store button.ui-button:disabled:hover {
+  background: var(--rule);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.store button.ui-button.quiet:disabled,
+.store button.ui-button.quiet:disabled:hover,
+.store button.ui-button.text-button:disabled,
+.store button.ui-button.text-button:disabled:hover {
+  background: transparent;
+  color: var(--muted);
+  text-decoration: none;
+}
+.store button.ui-button.quiet[data-disabled-surface='selected']:disabled,
+.store button.ui-button.quiet[data-disabled-surface='selected']:disabled:hover {
+  background: var(--selected);
+}
+.store button.ui-button.quiet[data-disabled-surface='muted']:disabled,
+.store button.ui-button.quiet[data-disabled-surface='muted']:disabled:hover {
+  background: var(--subtle);
+}
+.store button.ui-button[aria-busy='true']:not(.quiet):not(.text-button):not(.task-danger) {
+  background: var(--color-action-fill);
+  color: var(--color-on-action);
+}
+.store button.ui-button.task-danger[aria-busy='true']:not(.text-button) {
+  background: var(--color-error-fill);
+  color: var(--color-on-error);
+}
+.store button.ui-button.text-button[aria-busy='true'] {
+  color: var(--accent);
+}
+.store button.ui-button.text-button.task-danger[aria-busy='true'] {
+  color: var(--danger);
+}
+.store button.ui-button[aria-busy='true'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.store button.ui-button:has(.button-loading-label) {
+  position: relative;
+}
+.store .button-loading-label {
+  visibility: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-group);
+  max-width: 100%;
+}
+.store .button-loading-label + .button-spinner {
+  position: absolute;
+  left: calc(50% - 10px);
+  top: calc(50% - 10px);
+}
+.store .button-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: button-spin 700ms linear infinite;
+}
+@keyframes button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .store .button-spinner {
+    animation: none;
+  }
+}
+.store a.task-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-action-fill);
+  color: var(--color-on-action);
+  font-weight: var(--font-medium);
+  text-decoration: none;
+}
+.store a.task-link:hover {
+  background: var(--color-action-fill-hover);
+}
+.store a.task-link.secondary {
+  background: var(--selected);
+  color: var(--accent);
+}
+.store button.ui-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--control-target);
+  height: var(--control-target);
+  min-height: var(--control-target);
+  padding: var(--space-control);
+  border-radius: var(--control-radius);
+}
+.store button.ui-icon-button[data-tone='secondary'] {
+  background: var(--selected);
+  color: var(--accent);
+}
+.store button.ui-icon-button[data-tone='secondary']:hover {
+  background: var(--color-secondary-hover);
+}
+.store button.ui-icon-button[data-tone='subtle'] {
+  background: var(--subtle);
+  color: var(--muted);
+}
+.store button.ui-icon-button[data-tone='ghost'] {
+  background: transparent;
+  color: inherit;
+}
+.store button.ui-icon-button[data-tone='danger'] {
+  background: transparent;
+  color: var(--danger);
+}
+.store button.ui-icon-button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.store button.ui-icon-button.ui-icon-round {
+  border-radius: 50%;
+}
+.store .ui-chevron {
+  flex: none;
+}
+.store .ui-chevron.is-down {
+  transform: rotate(90deg);
+}
+.store .ui-status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  flex: none;
+  max-width: 100%;
+  margin: 0;
+  padding: var(--space-tight) var(--space-group);
+  border-radius: var(--radius-chip);
+  font-size: var(--text-caption);
+  line-height: var(--line-caption);
+  font-weight: var(--font-medium);
+  overflow-wrap: anywhere;
+}
+.store .ui-status-chip[data-tone='neutral'] {
+  background: var(--subtle);
+  color: var(--muted);
+}
+.store .ui-status-chip[data-tone='accent'] {
+  background: var(--selected);
+  color: var(--accent);
+}
+.store .ui-status-chip[data-tone='success'] {
+  background: var(--subtle);
+  color: var(--success);
+}
+.store .ui-status-chip[data-tone='error'] {
+  background: var(--color-error-surface);
+  color: var(--danger);
+}
+.store button.ui-action-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-field);
+  width: 100%;
+  min-height: var(--control-target);
+  margin: 0;
+  padding: var(--space-field) 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+}
+.store button.ui-action-row:hover {
+  background: var(--subtle);
+}
+.store button.ui-action-row:disabled {
+  background: transparent;
+  color: var(--muted);
+}
+.store .ui-row-content {
+  display: grid;
+  gap: var(--space-group);
+  min-width: 0;
+  flex: 1;
+}
+.store .ui-row-content > strong {
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+  font-weight: var(--font-medium);
+  overflow-wrap: anywhere;
+}
+.store .ui-row-description {
+  display: block;
+  color: var(--muted);
+  font-size: var(--text-label);
+  line-height: var(--line-label);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.store .ui-facts {
+  display: grid;
+  gap: var(--space-field);
+  margin: 0;
+}
+.store .ui-facts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-field);
+  margin: 0;
+}
+.store .ui-facts dt,
+.store .ui-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.store .ui-facts dt {
+  color: var(--muted);
+  font-size: var(--text-label);
+  line-height: var(--line-label);
+}
+.store .ui-facts dd {
+  text-align: right;
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+}
+.store .ui-facts.is-stacked > div {
+  grid-template-columns: 1fr;
+  gap: var(--space-group);
+}
+.store .ui-facts.is-stacked dd {
+  text-align: left;
+}
+.store .ui-field,
+.store .task-form label:not(.check-label) {
+  display: grid;
+  gap: var(--space-group);
+  margin: 0;
+  font-size: var(--text-label);
+  line-height: var(--line-label);
+}
+.store .ui-field input:not([type='checkbox']),
+.store .ui-field select {
+  min-height: var(--control-height);
+  font-size: var(--text-body);
+  line-height: var(--line-body);
+}
+.store .reference-dialog.ui-sheet {
+  padding: var(--space-section);
+  border-radius: var(--radius-sheet);
+}
+.store .ui-sheet .dialog-heading {
+  margin-bottom: var(--space-field);
+}
+.store .ui-sheet .dialog-heading h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .store .reference-dialog.ui-sheet {
+    padding-bottom: calc(var(--space-section) + env(safe-area-inset-bottom));
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  }
+}
+.store .grouped-settings .ui-action-row {
+  padding: var(--space-field);
+}
+.store .grouped-settings .ui-action-row:last-child {
+  border-bottom: 0;
+}
+.store .ui-sheet label.ui-field {
+  margin: 0;
+  gap: var(--space-group);
+}
+
+.store .device-card-summary {
+  display: grid;
+  gap: var(--space-group);
+}
+.store .device-card-summary h2 {
+  margin-bottom: 0;
+}
+.store .ui-field {
+  font-weight: var(--font-medium);
+}
+
+.store .ui-sheet form.task-form {
+  gap: var(--space-field);
+}

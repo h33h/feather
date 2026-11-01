@@ -1,0 +1,20 @@
+[Unit]
+Description=iSign trusted gVisor broker (privileged controller, never web)
+After=docker.service network-online.target
+Requires=docker.service
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/isign/runner
+Environment=PYTHONPATH=/opt/isign/runner:/etc/isign
+ExecStart=/opt/isign/venv/bin/python -m controller.http_host --factory controller.personal_deployment:recovered_broker --certificate /etc/isign/tls/runner.pem --private-key /etc/isign/tls/runner.key --host APPROVED_PRIVATE_BRIDGE_ADDRESS --port 8443
+Restart=on-failure
+RestartSec=5
+MemoryMax=256M
+TasksMax=128
+UMask=0077
+# Factory must pin image/runsc/proof keys, exact authorizer URL and public Apple trust policies.
+# It must recover before serving; one guest/global slot; physical scratch12GiB; free guard21GiB.
+# Do not blindly add filesystem/kernel restrictions that break verified loop/mount cleanup.
+[Install]
+WantedBy=multi-user.target

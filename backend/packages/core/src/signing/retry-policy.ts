@@ -1,0 +1,23 @@
+const transient = new Set([
+  'APPLE_TEMPORARY_UNAVAILABLE',
+  'APPLE_RATE_LIMITED',
+  'MUTATION_OUTCOME_UNKNOWN',
+  'RESOURCE_RECONCILIATION_REQUIRED',
+  'PROVIDER_TIMEOUT',
+  'PROVIDER_RATE_LIMITED',
+  'PROVIDER_UNAVAILABLE',
+  'RUNNER_INTERRUPTED',
+  'RUNNER_TEMPORARY_UNAVAILABLE',
+  'EXECUTOR_DEADLINE',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'UND_ERR_SOCKET',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+]);
+export function classifyJobFailure(code: string): 'retryable' | 'terminal' {
+  return transient.has(code) ? 'retryable' : 'terminal';
+}

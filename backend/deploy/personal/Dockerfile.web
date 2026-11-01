@@ -1,0 +1,20 @@
+# Supply an approved node:22-trixie-slim@sha256 digest; no mutable deployment default.
+ARG NODE_IMAGE
+FROM ${NODE_IMAGE} AS build
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-lock.yaml .npmrc ./
+# Keep installed packages; discard the download store before committing the layer.
+RUN pnpm install --frozen-lockfile --ignore-scripts && node -e "require('node:fs').rmSync('.pnpm-store', { recursive: true, force: true })"
+COPY . .
+RUN node backend/scripts/install-isignkit.mjs && node backend/scripts/verify-isignkit.mjs
+RUN pnpm build
+FROM ${NODE_IMAGE}
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /data/isign && chmod 0700 /data/isign && chown -R node:node /data
+COPY --from=build --chown=node:node /app /app
+USER node
+ENV NODE_ENV=production HOSTNAME=0.0.0.0 ISIGN_ISIGNKIT_PATH=/app/backend/.tools/isignkit
+EXPOSE 3000
+CMD ["node","node_modules/next/dist/bin/next","start","web","--hostname","0.0.0.0"]

@@ -1,0 +1,29 @@
+.store .theme-select {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--control-target);
+  height: var(--control-target);
+  margin: 0;
+  border-radius: var(--control-radius);
+  color: var(--muted);
+}
+.store .theme-select:hover {
+  background: var(--subtle);
+  color: var(--ink);
+}
+.store .theme-select select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: var(--control-target);
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.store .theme-select:has(select:focus-visible) {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}

@@ -1,0 +1,5 @@
+# Guest-image and isolated synthetic-crypto test dependencies (Python >=3.9.2).
+cryptography==50.0.2
+cffi==2.0.0
+pycparser==2.23
+typing-extensions==4.16.0

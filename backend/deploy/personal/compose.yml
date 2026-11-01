@@ -1,0 +1,74 @@
+name: isign-personal
+services:
+  postgres:
+    # Pin a supported PostgreSQL16 bookworm image@sha256 (PGDATA layout below).
+    image: ${POSTGRES_IMAGE:?approved PostgreSQL image digest required}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: isign_admin
+      POSTGRES_DB: isign
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_PASSWORD_FILE: /run/secrets/database_admin_password
+    secrets: [database_admin_password]
+    volumes: [database:/var/lib/postgresql/data]
+    networks: [database]
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 128
+    shm_size: 128m
+    command:
+      [
+        postgres,
+        -c,
+        shared_buffers=128MB,
+        -c,
+        max_connections=20,
+        -c,
+        max_wal_size=256MB,
+        -c,
+        log_statement=none,
+      ]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U isign_admin -d isign']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: { driver: json-file, options: { max-size: 10m, max-file: '3' } }
+  web:
+    image: ${WEB_IMAGE:?approved built web image digest required}
+    restart: unless-stopped
+    init: true
+    user: '1000:1000'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports: ['127.0.0.1:3080:3000']
+    env_file: [personal.env]
+    volumes:
+      - ./secrets/server.env:/run/isign/server.env:ro
+      - ./tls/runner-ca.pem:/run/isign/runner-ca.pem:ro
+      - ./client:/run/isign/client:ro
+      - objects:/data/isign
+    secrets: [vault_key]
+    tmpfs: ['/tmp:size=67108864,mode=1777', '/app/web/.next/cache:size=67108864,uid=1000,gid=1000']
+    extra_hosts: ['runner.internal:host-gateway']
+    networks: [database, egress]
+    depends_on: { postgres: { condition: service_healthy } }
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+    command: [node, --import, tsx, backend/scripts/personal-start.ts]
+    logging: { driver: json-file, options: { max-size: 10m, max-file: '3' } }
+networks:
+  database: { internal: true }
+  egress: {}
+volumes:
+  database: {}
+  objects: {}
+secrets:
+  database_admin_password: { file: ./secrets/database_admin_password }
+  vault_key: { file: ./keys/vault_key }
+
+# Bootstrap is a separate approved operator command with writable /bootstrap/key and
+# /state parents, not the application service's read-only Docker secret mount.
+# See bootstrap-compose.yml; do not run bootstrap after existing keys are present.

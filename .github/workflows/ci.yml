@@ -1,0 +1,254 @@
+name: Checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+defaults:
+  run:
+    working-directory: .
+jobs:
+  local-contracts:
+    if: ${{ github.event_name != 'push' }}
+    runs-on: ubuntu-latest
+    # Full unit and browser suites need room for shutdown on hosted runners.
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_PASSWORD: isign-test-only
+          POSTGRES_DB: isign_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d isign_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ISIGN_TEST_DATABASE_URL: postgres://postgres:isign-test-only@127.0.0.1:5432/isign_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use one pnpm store for install and cache hooks
+        working-directory: .
+        run: echo "npm_config_store_dir=$RUNNER_TEMP/pnpm-store" >> "$GITHUB_ENV"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          package_json_file: package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm setup:runner
+      - run: pnpm setup:catalog
+      - run: node backend/scripts/verify-isignkit.mjs
+      - run: pnpm format:check
+      - run: pnpm design:check
+      - run: pnpm lint:python
+      - run: pnpm check:hooks
+      - run: pnpm test:deploy
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm test:postgres
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright test
+
+  linux-runner-contracts:
+    if: ${{ github.event_name != 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build and synthetic crypto dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ make pkg-config libssl-dev openssl
+          python -m pip install -r backend/packages/runner/requirements.txt
+      - name: Fetch exact signer source and verify reviewed patch
+        run: |
+          git init "$RUNNER_TEMP/zsign-source"
+          git -C "$RUNNER_TEMP/zsign-source" remote add origin https://github.com/zhlynn/zsign.git
+          git -C "$RUNNER_TEMP/zsign-source" fetch --depth=1 origin 614caa8d1ca949e260e5746144aa52d27a4b08d6
+          git -C "$RUNNER_TEMP/zsign-source" checkout --detach FETCH_HEAD
+          python - <<'PYTHON'
+          import importlib.util, os, pathlib
+          source = pathlib.Path('backend/packages/runner/controller/zsign_patch.py')
+          spec = importlib.util.spec_from_file_location('zsign_patch', source)
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          scratch = pathlib.Path(os.environ['RUNNER_TEMP'])
+          module.patch(scratch / 'zsign-source', scratch / 'zsign-strict')
+          PYTHON
+          make -j2 -C "$RUNNER_TEMP/zsign-strict/build/linux" VERSION=1.1.2
+      - name: Run actual synthetic signer and runner regressions
+        run: |
+          ISIGN_TEST_ZSIGN_BINARY="$RUNNER_TEMP/zsign-strict/bin/zsign" \
+          ISIGN_TEST_ZSIGN_SOURCE="$RUNNER_TEMP/zsign-source" \
+          ISIGN_TEST_OPENSSL=/usr/bin/openssl \
+          python - <<'PYTHON'
+          import sys, unittest
+          suite = unittest.defaultTestLoader.discover('backend/tests', pattern='test_runner_*.py')
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          sys.exit(0 if result.wasSuccessful() and not result.skipped else 1)
+          PYTHON
+
+  ios-contracts:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      ISIGN_SERVICE_ORIGIN: ${{ vars.ISIGN_ORIGIN }}
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Show Apple toolchain
+        run: xcodebuild -version && swift --version
+      - name: Test iSign client policies and catalog decoding
+        run: |
+          swift test --package-path ios
+          swift test --package-path ios/AltSourceKit
+      - name: Build unsigned iOS client with pinned packages
+        run: |
+          if [ -z "$ISIGN_SERVICE_ORIGIN" ]; then
+            echo 'Set the repository Actions variable ISIGN_ORIGIN to the public HTTPS backend origin.' >&2
+            exit 1
+          fi
+          xcodebuild \
+            -project ios/ISignClient.xcodeproj \
+            -scheme ISignClient \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/isign-client-ios" \
+            -disableAutomaticPackageResolution \
+            -skipPackagePluginValidation \
+            ISIGN_SERVICE_ORIGIN="$ISIGN_SERVICE_ORIGIN" \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Package official unsigned client template
+        run: |
+          node backend/scripts/package-client.mjs \
+            --app ios/_build/Applications/ISignClient.app \
+            --out ios/packages/ISignClient.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isign-client-${{ github.sha }}
+          path: |
+            ios/packages/ISignClient.ipa
+            ios/packages/ISignClient.ipa.json
+          if-no-files-found: error
+          retention-days: 14
+
+  ci-required:
+    name: ci-required
+    if: ${{ always() && github.event_name != 'push' }}
+    needs: [local-contracts, linux-runner-contracts, ios-contracts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Require every check to succeed
+        env:
+          WEB_RESULT: ${{ needs.local-contracts.result }}
+          RUNNER_RESULT: ${{ needs.linux-runner-contracts.result }}
+          IOS_RESULT: ${{ needs.ios-contracts.result }}
+        run: |
+          test "$WEB_RESULT" = success
+          test "$RUNNER_RESULT" = success
+          test "$IOS_RESULT" = success
+
+  deploy:
+    name: Deploy production
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ISIGN_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    defaults:
+      run:
+        working-directory: .
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      DEPLOY_PLATFORM: ${{ vars.DEPLOY_PLATFORM || 'linux/amd64' }}
+      NODE_IMAGE: node:22-trixie-slim@sha256:154ba2f4d6fec323d28e4f4bb86bba4677f1223391a1979cf521304e03a98dfa
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate deployment configuration and set up SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for setting in DEPLOY_HOST DEPLOY_USER DEPLOY_PATH DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            if [ -z "${!setting}" ]; then
+              echo "::error::Missing $setting in production environment or repository settings"
+              exit 1
+            fi
+          done
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]
+          [[ "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_./-]+$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the exact commit with cached Docker layers
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: backend/deploy/personal/Dockerfile.web
+          platforms: ${{ env.DEPLOY_PLATFORM }}
+          build-args: NODE_IMAGE=${{ env.NODE_IMAGE }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          tags: isign-web:${{ github.sha }}
+          load: true
+          push: false
+          cache-from: type=gha,scope=isign-web
+          cache-to: type=gha,scope=isign-web,mode=max,ignore-error=true,timeout=2m
+      - name: Export image for SSH transfer
+        run: |
+          set -euo pipefail
+          docker save "isign-web:$GITHUB_SHA" | gzip > "$RUNNER_TEMP/image.tar.gz"
+      - name: Transfer image and deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A superseded commit must never replace a newer main deployment.
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$GITHUB_SHA"
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          stage="/tmp/isign-$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          ssh_options=(-i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15)
+          ssh "${ssh_options[@]}" -p "$DEPLOY_PORT" "$target" "mkdir -m 700 '$stage'"
+          cleanup() {
+            ssh "${ssh_options[@]}" -p "$DEPLOY_PORT" "$target" "rm -rf -- '$stage'"
+          }
+          trap cleanup EXIT
+          scp "${ssh_options[@]}" -P "$DEPLOY_PORT" \
+            "$RUNNER_TEMP/image.tar.gz" backend/deploy/personal/deploy.sh "$target:$stage/"
+          ssh "${ssh_options[@]}" -p "$DEPLOY_PORT" "$target" \
+            "bash '$stage/deploy.sh' '$DEPLOY_PATH' '$stage/image.tar.gz' '$GITHUB_SHA'"

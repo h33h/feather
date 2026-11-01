@@ -1,0 +1,18 @@
+{
+  "origin": "https://isign.cloudnodex.ru",
+  "authorizerAddress": "127.0.0.1",
+  "authorizerPort": 8444,
+  "authorizerCertificateSha256": "REPLACE_WITH_APPROVED_CERTIFICATE_DER_SHA256",
+  "authorizerCaFile": "/etc/isign/tls/authorizer-ca.pem",
+  "tokenFile": "/etc/isign/secrets/broker-token",
+  "proofKeyFile": "/etc/isign/secrets/broker-proof-key",
+  "audience": "isign-personal",
+  "dockerPath": "/usr/bin/docker",
+  "losetupPath": "/usr/sbin/losetup",
+  "mkfsPath": "/usr/sbin/mkfs.ext4",
+  "runscPath": "/usr/local/bin/runsc",
+  "runscSha256": "REPLACE_WITH_APPROVED_RUNSC_SHA256",
+  "imageDigest": "sha256:REPLACE_WITH_APPROVED_GUEST_IMAGE_SHA256",
+  "stateDirectory": "/var/lib/isign/broker",
+  "scratchDirectory": "/var/lib/isign/scratch"
+}

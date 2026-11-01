@@ -1,0 +1,19 @@
+# BASE_IMAGE must be an explicitly approved python image@sha256 digest.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE} AS build
+RUN apt-get update && apt-get install -y --no-install-recommends g++=4:12.2.0-3 make=4.3-4.1 pkg-config=1.8.1-1 libssl-dev=3.0.22-1~deb12u1 && rm -rf /var/lib/apt/lists/*
+COPY zsign-source /build/zsign
+RUN make -C /build/zsign/build/linux VERSION=1.1.2 && test -x /build/zsign/bin/zsign
+FROM ${BASE_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends openssl=3.0.22-1~deb12u1 libssl3=3.0.22-1~deb12u1 && rm -rf /var/lib/apt/lists/*
+COPY runner /opt/isign/runner
+RUN python3 -m pip install --no-cache-dir --requirement /opt/isign/runner/requirements.txt
+COPY --from=build /build/zsign/bin/zsign /usr/local/bin/zsign
+# Contains public CA DER/PEM, pinned fingerprints and fixed tool paths only.
+COPY trust /opt/isign/trust
+COPY runner-config.json /opt/isign/runner-config.json
+RUN python3 -c 'import hashlib,json,pathlib; p=pathlib.Path("/opt/isign/runner-config.json"); c=json.loads(p.read_text()); c["zsignSha256"]=hashlib.sha256(pathlib.Path("/usr/local/bin/zsign").read_bytes()).hexdigest(); p.write_text(json.dumps(c,sort_keys=True,separators=(",",":")))' && chmod -R a-w /opt/isign && mkdir /job && chown 65532:65532 /job
+USER 65532:65532
+WORKDIR /job
+ENTRYPOINT ["/usr/local/bin/python3"]
+CMD ["/opt/isign/runner/guest_watchdog.py"]

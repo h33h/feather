@@ -1,0 +1,20 @@
+//
+//  default.xcconfig
+//  Ventrica
+//
+//  Created by samsam on 2/5/26.
+//
+
+ISIGN_CLIENT_PROJECT_VERSION=2.9.0
+ISIGN_CLIENT_PRODUCT_BUNDLE_IDENTIFIER=dev.h33h.feather.isign
+ISIGN_CLIENT_DISAMBIGUATOR=
+
+// Supplied by CI from the repository variable ISIGN_ORIGIN.
+ISIGN_SERVICE_ORIGIN =
+
+AD_HOC_CODE_SIGNING_ALLOWED = YES
+
+DEPLOYMENT_LOCATION = YES
+DSTROOT = $(SRCROOT)/_build/
+
+HEADER_SEARCH_PATHS = $(inherited) "$(SRCROOT)/Zsign/src/common"

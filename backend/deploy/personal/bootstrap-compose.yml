@@ -1,0 +1,23 @@
+# Use together with compose.yml AFTER reviewed provisioning approval. No auto-start.
+services:
+  bootstrap:
+    image: ${WEB_IMAGE:?approved built web image digest required}
+    profiles: [operator]
+    user: '1000:1000'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file: [personal.env]
+    environment:
+      ISIGN_PERSONAL_KEY_FILE: /bootstrap/keys/vault_key
+      ISIGN_SERVER_ENV_FILE: /run/isign/server.env
+    volumes:
+      - ./secrets/server.env:/run/isign/server.env:ro
+      - ./tls/runner-ca.pem:/run/isign/runner-ca.pem:ro
+      - ./keys:/bootstrap/keys
+    networks: [database]
+    tmpfs: ['/tmp:size=16777216,mode=1777']
+    entrypoint: [node, --import, tsx, backend/scripts/personal-admin.ts]
+    # Operator runs: docker compose ... run --rm bootstrap init ADMIN_LOGIN.
+    # Normal invitations and recovery use /admin; recover-admin is emergency only.
+    # Creation of host ./keys with UID1000/mode0700 is separately approved provisioning.

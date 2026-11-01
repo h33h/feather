@@ -1,8 +1,75 @@
+# Dependencies and package caches
+node_modules/
+.pnpm-store/
+.dependency-cache/
+
+# Build output
+.next*/
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Test reports and coverage
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# Python environments and caches
+__pycache__/
+*.py[cod]
+.venv*/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local configuration and application data
+.env*
+*.env
+*.env.*
+!.env.example
+!.env.*.example
+!*.env.example
+.local-data/
+.cache/
+
+# Signing credentials and generated application packages
+*.p8
+*.p12
+*.pfx
+*.key
+*.pem
+*.mobileprovision
+*.ipa
+apple-reference.json
+/backend/deploy/personal/secrets/
+/backend/deploy/personal/keys/
+/backend/deploy/personal/tls/
+
+# Audit output
+evidence/
+.impeccable/
+
+# Next.js generated agent metadata
+/web/AGENTS.md
+/web/CLAUDE.md
+
+# Logs and editor files
+*.log
 .DS_Store
-packages
-Payload
-*UserInterfaceState.xcuserstate
-xcuserdata/
-deps
-cert.json
-_build
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Verified local catalog decoder
+/backend/.tools/
+
+# Operator-published client template and release metadata
+/backend/deploy/personal/client/
