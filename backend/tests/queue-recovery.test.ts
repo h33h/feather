@@ -97,16 +97,16 @@ it('keeps the source for the only automatic retry and schedules deletion after a
   );
 });
 
-it('reserves receiving before transfer and binds request replay to its original device and name', async () => {
+it('reserves receiving before transfer and binds request replay to its original device and client release', async () => {
   const { db, queue } = await fixture();
   await db.query("DELETE FROM jobs WHERE owner_id='one'");
-  const input = { key: 'receiving', deviceId: 'd-one', name: 'New.ipa', source: 'upload' as const };
-  const first = await queue.beginSubmission('one', input);
-  expect(await queue.beginSubmission('one', input)).toEqual(first);
-  await expect(queue.beginSubmission('one', { ...input, name: 'Other.ipa' })).rejects.toThrow(
-    'IDEMPOTENCY_BINDING_MISMATCH',
-  );
-  await expect(queue.beginSubmission('one', { ...input, key: 'other' })).rejects.toThrow(
+  const input = { key: 'receiving', deviceId: 'd-one', releaseSha256: 'a'.repeat(64) };
+  const first = await queue.beginClientInstallation('one', input);
+  expect(await queue.beginClientInstallation('one', input)).toEqual(first);
+  await expect(
+    queue.beginClientInstallation('one', { ...input, releaseSha256: 'b'.repeat(64) }),
+  ).rejects.toThrow('IDEMPOTENCY_BINDING_MISMATCH');
+  await expect(queue.beginClientInstallation('one', { ...input, key: 'other' })).rejects.toThrow(
     'ACTIVE_JOB_EXISTS',
   );
   await queue.failReceiving('one', first.jobId, 'UPLOAD_INTERRUPTED');
@@ -118,29 +118,13 @@ it('reserves receiving before transfer and binds request replay to its original 
 it('rejects replay after the same device was rebound to a new connection generation', async () => {
   const { db, queue } = await fixture();
   await db.query("DELETE FROM jobs WHERE owner_id='one'");
-  const input = { key: 'bound', deviceId: 'd-one', name: 'New.ipa', source: 'upload' as const };
-  await queue.beginSubmission('one', input);
+  const input = { key: 'bound', deviceId: 'd-one', releaseSha256: 'a'.repeat(64) };
+  await queue.beginClientInstallation('one', input);
   await db.query("UPDATE connections SET generation=2 WHERE id='c-one'");
   await db.query("UPDATE devices SET connection_generation=2 WHERE id='d-one'");
-  await expect(queue.beginSubmission('one', input)).rejects.toThrow('IDEMPOTENCY_BINDING_MISMATCH');
-});
-
-it('keeps replay stable when server provenance is enriched after accepting the request', async () => {
-  const { db, queue } = await fixture();
-  await db.query("DELETE FROM jobs WHERE owner_id='one'");
-  const input = {
-    key: 'catalog',
-    deviceId: 'd-one',
-    name: 'Catalog.ipa',
-    source: 'catalog' as const,
-    provenance: { sourceId: 'source', releaseId: 'release', snapshot: 'snapshot' },
-  };
-  const first = await queue.beginSubmission('one', input);
-  await db.query(
-    'UPDATE uploads SET provenance=provenance||\'{"receivedAt":1234}\'::jsonb WHERE id=$1',
-    [first.uploadId],
+  await expect(queue.beginClientInstallation('one', input)).rejects.toThrow(
+    'IDEMPOTENCY_BINDING_MISMATCH',
   );
-  expect(await queue.beginSubmission('one', input)).toEqual(first);
 });
 
 it('keeps the global worker fenced until the interrupted executor is confirmed destroyed', async () => {

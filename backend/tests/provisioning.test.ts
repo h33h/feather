@@ -1,3 +1,4 @@
+import { queuedJobFixture } from './helpers/job';
 import { SessionService } from '../packages/core/src/auth/sessions';
 import { ConnectionLifecycle } from '../packages/core/src/apple/connection-lifecycle';
 import { loginFixture, connectionFixture, deviceFixture } from './helpers/login';
@@ -20,7 +21,7 @@ it('persists private-key reference before certificate POST and reconciles uncert
       "INSERT INTO uploads(id,owner_id,name,object_key,size,digest,status,created_at,expires_at) VALUES('upload',$1,'fixture.ipa','source.ipa',1,'source-digest','uploaded',0,999999999)",
       [owner],
     );
-    const job = await s.enqueue(owner, 'upload', 'provision');
+    const job = await queuedJobFixture(s, owner, 'upload', 'provision');
     await db.query(
       "UPDATE jobs SET state='provisioning',device_id=$2,lease_token='lease',lease_expires=999999 WHERE id=$1",
       [job.id, d.id],

@@ -1,3 +1,4 @@
+import { queuedJobFixture } from './helpers/job';
 import { collectedDeviceFixture } from './helpers/device';
 import { createHash } from 'node:crypto';
 import { afterEach, expect, it } from 'vitest';
@@ -168,7 +169,7 @@ for (const revokeAt of ['none', 'unwrap', 'publication'] as const)
         () => 100,
         async () => {},
       );
-      const job = await actions.enqueue('recipient', 'upload', 'synthetic', device);
+      const job = await queuedJobFixture(actions, 'recipient', 'upload', 'synthetic', device);
       await h.db.query(
         "UPDATE jobs SET state='provisioning',lease_token='lease',lease_expires=999999 WHERE id=$1",
         [job.id],
@@ -291,7 +292,7 @@ it('full PipelineCoordinator synthetic recipient signing keeps recipient-owned d
       () => 100,
       async () => {},
     ),
-    job = await actions.enqueue('recipient', 'upload', 'pipeline', device);
+    job = await queuedJobFixture(actions, 'recipient', 'upload', 'pipeline', device);
   const bytes = Buffer.from('SYNTHETIC PIPELINE ARTIFACT'),
     publisher = new Publisher(
       h.db,
@@ -385,7 +386,6 @@ it('full PipelineCoordinator synthetic recipient signing keeps recipient-owned d
         throw Error('unused');
       },
       cleanup: async () => {},
-      recoverInterrupted: async () => {},
     },
     canPreserve: async () => true,
     provision: async ({ grant }) => {
@@ -448,11 +448,13 @@ it('Apple ENABLED freshness gates ticket admission and expired grant snapshots c
   await devices.reportOs('recipient', d.id, '18.0');
   await devices.register('recipient', d.id, true);
   await upload(h);
-  const job = await new JobLifecycle(
-    h.db,
-    () => 100,
-    async () => {},
-  ).enqueue('recipient', 'upload', 'freshness', d.id);
+  const job = await queuedJobFixture(
+    new JobLifecycle(h.db, () => 100),
+    'recipient',
+    'upload',
+    'freshness',
+    d.id,
+  );
   await h.db.query("UPDATE jobs SET state='ready' WHERE id=$1", [job.id]);
   await h.db.query(
     "INSERT INTO artifacts(id,owner_id,job_id,connection_id,device_id,object_key,digest,metadata,valid_until,created_at,expires_at,verified) VALUES('fresh-artifact','recipient',$1,'connection',$2,'synthetic-artifact','synthetic',$3,999999,0,999999,true)",

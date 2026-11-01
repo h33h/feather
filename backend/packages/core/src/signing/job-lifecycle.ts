@@ -53,24 +53,15 @@ export class JobLifecycle {
     )
       throw new Failure('USER_UNAVAILABLE', 404);
   }
-  private async device(tx: QueryDatabase, owner: string, deviceId?: string) {
-    const devices = (
-      await tx.query<DeviceBinding>(
-        `SELECT d.id AS "deviceId",d.name AS "deviceName",c.id AS "connectionId",c.generation,c.connection_owner_id AS "connectionOwnerId",c.access_grant_id AS "grantId",c.access_grant_generation AS "grantGeneration"
-    FROM signing_devices d JOIN apple_connections c ON c.id=d.connection_id AND c.owner_id=d.owner_id
-    WHERE d.owner_id=$1 AND d.status='ready' AND c.state='ready' AND d.connection_generation=c.generation
-    AND ($2::text IS NULL OR d.id=$2) ORDER BY d.selected DESC,d.id`,
-        [owner, deviceId ?? null],
-      )
-    ).rows;
-    if (!devices.length) throw new Failure('DEVICE_SELECTION_REQUIRED', 409);
-    if (!deviceId && devices.length > 1) {
-      const selected = await tx.query('SELECT id FROM devices WHERE id=$1 AND selected=true', [
-        devices[0].deviceId,
-      ]);
-      if (!selected.rows.length) throw new Failure('DEVICE_SELECTION_REQUIRED', 409);
-    }
-    return devices[0];
+  private async device(tx: QueryDatabase, owner: string, deviceId: string) {
+    const devices = await tx.query<DeviceBinding>(
+      `SELECT d.id AS "deviceId",d.name AS "deviceName",c.id AS "connectionId",c.generation,c.connection_owner_id AS "connectionOwnerId",c.access_grant_id AS "grantId",c.access_grant_generation AS "grantGeneration"
+       FROM signing_devices d JOIN apple_connections c ON c.id=d.connection_id AND c.owner_id=d.owner_id
+       WHERE d.owner_id=$1 AND d.id=$2 AND d.status='ready' AND c.state='ready' AND d.connection_generation=c.generation`,
+      [owner, deviceId],
+    );
+    if (!devices.rows.length) throw new Failure('DEVICE_SELECTION_REQUIRED', 409);
+    return devices.rows[0];
   }
   private async vacant(tx: QueryDatabase, owner: string) {
     if (
@@ -82,67 +73,33 @@ export class JobLifecycle {
   private key(key: string) {
     if (!/^[A-Za-z0-9_-]{1,100}$/.test(key)) throw new Failure('INVALID_IDEMPOTENCY_KEY');
   }
-  private async insert(
-    tx: QueryDatabase,
+  async beginClientInstallation(
     owner: string,
-    upload: string,
-    key: string,
-    b: DeviceBinding,
-    state: 'receiving' | 'queued',
-    snapshot: unknown,
-    requestDigest = '',
-  ) {
-    const jobId = id();
-    await tx.query(
-      `INSERT INTO jobs(id,owner_id,upload_id,device_id,connection_id,connection_owner_id,connection_generation,access_grant_id,access_grant_generation,state,idempotency_key,created_at,updated_at,display_snapshot,request_digest)
-   VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14)`,
-      [
-        jobId,
-        owner,
-        upload,
-        b.deviceId,
-        b.connectionId,
-        b.connectionOwnerId,
-        b.generation,
-        b.grantId,
-        b.grantGeneration,
-        state,
-        key,
-        this.now,
-        JSON.stringify(snapshot),
-        requestDigest,
-      ],
-    );
-    return jobId;
-  }
-  async beginSubmission(
-    owner: string,
-    input: {
-      key: string;
-      deviceId?: string;
-      name: string;
-      source: 'upload' | 'catalog';
-      provenance?: unknown;
-    },
+    input: { key: string; deviceId: string; releaseSha256: string; version?: string },
   ) {
     this.key(input.key);
-    if (!input.name.trim() || input.name.length > 255 || /[\x00-\x1f\x7f]/.test(input.name))
-      throw new Failure('INVALID_FILE_NAME');
+    if (
+      !input.deviceId ||
+      input.deviceId.length > 100 ||
+      !/^[a-f0-9]{64}$/.test(input.releaseSha256)
+    )
+      throw new Failure('INVALID_REQUEST');
     return this.db.transaction(async (tx) => {
       await lockAuthority(tx);
       await this.owner(tx, owner);
       const b = await this.device(tx, owner, input.deviceId);
       const requestDigest = hash(
         canonicalReport({
-          name: input.name,
-          source: input.source,
+          // Keep persisted installation keys stable across this refactor.
+          name: 'iSign Client.ipa',
+          source: 'upload',
           deviceId: b.deviceId,
           connectionId: b.connectionId,
           generation: b.generation,
           connectionOwnerId: b.connectionOwnerId,
           grantId: b.grantId,
           grantGeneration: b.grantGeneration,
-          provenance: input.provenance ?? null,
+          provenance: { kind: 'isign-client', sha256: input.releaseSha256 },
         }),
       );
       const previous = (
@@ -157,30 +114,36 @@ export class JobLifecycle {
         return { jobId: previous.id, uploadId: previous.upload_id };
       }
       await this.vacant(tx, owner);
-      const upload = id();
+      const uploadId = id(),
+        jobId = id();
       await tx.query(
-        "INSERT INTO uploads(id,owner_id,name,object_key,size,digest,status,provenance,created_at,expires_at) VALUES($1,$2,$3,$4,0,'','receiving',$5,$6,$7)",
+        "INSERT INTO uploads(id,owner_id,name,object_key,size,digest,status,created_at,expires_at) VALUES($1,$2,'iSign Client.ipa',$3,0,$4,'receiving',$5,$6)",
+        [uploadId, owner, uploadId + '.ipa', input.releaseSha256, this.now, this.now + 1800000],
+      );
+      await tx.query(
+        `INSERT INTO jobs(id,owner_id,upload_id,device_id,connection_id,connection_owner_id,connection_generation,access_grant_id,access_grant_generation,state,idempotency_key,created_at,updated_at,display_snapshot,request_digest)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'receiving',$10,$11,$11,$12,$13)`,
         [
-          upload,
+          jobId,
           owner,
-          input.name,
-          upload + '.ipa',
-          input.provenance ? JSON.stringify(input.provenance) : null,
+          uploadId,
+          b.deviceId,
+          b.connectionId,
+          b.connectionOwnerId,
+          b.generation,
+          b.grantId,
+          b.grantGeneration,
+          input.key,
           this.now,
-          this.now + 1800000,
+          JSON.stringify({
+            name: 'iSign Client',
+            version: input.version ?? null,
+            device: b.deviceName,
+          }),
+          requestDigest,
         ],
       );
-      const jobId = await this.insert(
-        tx,
-        owner,
-        upload,
-        input.key,
-        b,
-        'receiving',
-        { name: input.name, version: null, source: input.source, device: b.deviceName },
-        requestDigest,
-      );
-      return { jobId, uploadId: upload };
+      return { jobId, uploadId };
     });
   }
   async completeSource(owner: string, jobId: string) {
@@ -190,93 +153,6 @@ export class JobLifecycle {
     );
     if (!rows.rows.length) throw new Failure('SIGNING_INPUT_NOT_READY', 409);
     this.notify(owner, jobId, rows.rows[0].device_id);
-  }
-  async enqueue(owner: string, upload: string, key: string, deviceId?: string) {
-    this.key(key);
-    const result = await this.db.transaction(async (tx) => {
-      await lockAuthority(tx);
-      await this.owner(tx, owner);
-      const previous = (
-        await tx.query<{ id: string; upload_id: string; device_id: string }>(
-          'SELECT id,upload_id,device_id FROM jobs WHERE owner_id=$1 AND idempotency_key=$2',
-          [owner, key],
-        )
-      ).rows[0];
-      if (previous) {
-        if (
-          previous.upload_id !== upload ||
-          (deviceId !== undefined && previous.device_id !== deviceId)
-        )
-          throw new Failure('IDEMPOTENCY_BINDING_MISMATCH', 409);
-        return { id: previous.id, created: false };
-      }
-      const b = await this.device(tx, owner, deviceId);
-      const source = (
-        await tx.query<{ name: string; metadata: { title?: string; version?: string } | null }>(
-          "SELECT name,metadata FROM uploads WHERE id=$1 AND owner_id=$2 AND delete_requested_at IS NULL AND status IN('uploaded','ready') AND expires_at>$3",
-          [upload, owner, this.now],
-        )
-      ).rows[0];
-      if (!source) throw new Failure('SOURCE_UNAVAILABLE', 410);
-      await this.vacant(tx, owner);
-      return {
-        id: await this.insert(tx, owner, upload, key, b, 'queued', {
-          name: source.metadata?.title ?? source.name,
-          version: source.metadata?.version ?? null,
-          source: null,
-          device: b.deviceName,
-        }),
-        created: true,
-      };
-    });
-    if (result.created) {
-      const selected = (
-        await this.db.query<{ device_id: string }>(
-          'SELECT device_id FROM jobs WHERE id=$1 AND owner_id=$2',
-          [result.id, owner],
-        )
-      ).rows[0];
-      this.notify(owner, result.id, selected.device_id);
-    }
-    return result;
-  }
-  async cancel(owner: string, job: string) {
-    await this.db.transaction(async (tx) => {
-      await lockAuthority(tx);
-      const active = await tx.query(
-        'SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL AND blocked_at IS NULL FOR UPDATE',
-        [owner],
-      );
-      if (!active.rows.length) throw new Failure('USER_UNAVAILABLE', 404);
-      const updated = await tx.query(
-        "UPDATE jobs SET state='cancelled',reason='USER_CANCELLED',finished_at=$3,updated_at=$3,lease_token=NULL,lease_expires=NULL WHERE id=$1 AND owner_id=$2 AND state IN('receiving','queued','analyzing','provisioning','signing','verifying') RETURNING upload_id",
-        [job, owner, this.now],
-      );
-      if (!updated.rows.length) {
-        const existing = await tx.query('SELECT id FROM jobs WHERE id=$1 AND owner_id=$2', [
-          job,
-          owner,
-        ]);
-        if (!existing.rows.length) throw new Failure('NOT_FOUND', 404);
-        return;
-      }
-      await tx.query('UPDATE executor_tasks SET consumed=true WHERE job_id=$1 AND owner_id=$2', [
-        job,
-        owner,
-      ]);
-      await tx.query(
-        'UPDATE uploads SET delete_requested_at=$3 WHERE id IN(SELECT upload_id FROM jobs WHERE id=$1 AND owner_id=$2)',
-        [job, owner, this.now],
-      );
-    });
-    const result = (
-      await this.db.query<{ id: string; state: string; reason: string | null }>(
-        'SELECT id,state,reason FROM jobs WHERE id=$1 AND owner_id=$2',
-        [job, owner],
-      )
-    ).rows[0];
-    if (!result) throw new Failure('NOT_FOUND', 404);
-    return result;
   }
   async claim(jobId: string, ownerId: string) {
     return this.db.transaction(async (tx) => {

@@ -457,22 +457,17 @@ export class PersonalObjects {
 }
 export class PersonalStorage {
   constructor(public objects: PersonalObjects) {}
-  async upload(
-    owner: string,
-    name: string,
-    input: AsyncIterable<Uint8Array>,
-    options: UploadOptions = {},
-  ) {
-    if (!/\.ipa$/i.test(name) || name.length > 180 || /[\x00-\x1f/\\]/.test(name))
-      throw new Failure('INVALID_FILE_NAME');
+  async upload(owner: string, input: AsyncIterable<Uint8Array>, options: UploadOptions) {
     if (!options.uploadId || !options.jobId) throw new Failure('RECEIVING_JOB_REQUIRED', 409);
     const uploadId = options.uploadId,
       key = uploadId + '.ipa';
-    const admitted = await this.objects.db.query(
-      "SELECT j.id FROM signing_jobs j JOIN apple_connections c ON c.id=j.connection_id AND c.owner_id=j.owner_id JOIN uploads u ON u.id=j.upload_id AND u.owner_id=j.owner_id WHERE j.id=$1 AND j.owner_id=$2 AND j.upload_id=$3 AND j.state='receiving' AND c.state='ready' AND c.generation=j.connection_generation AND u.delete_requested_at IS NULL AND u.status='receiving'",
+    const admitted = await this.objects.db.query<{ digest: string }>(
+      "SELECT u.digest FROM signing_jobs j JOIN apple_connections c ON c.id=j.connection_id AND c.owner_id=j.owner_id JOIN uploads u ON u.id=j.upload_id AND u.owner_id=j.owner_id WHERE j.id=$1 AND j.owner_id=$2 AND j.upload_id=$3 AND j.state='receiving' AND c.state='ready' AND c.generation=j.connection_generation AND u.delete_requested_at IS NULL AND u.status='receiving'",
       [options.jobId, owner, uploadId],
     );
-    if (!admitted.rows.length) throw new Failure('SIGNING_INPUT_NOT_READY', 409);
+    const expectedDigest = admitted.rows[0]?.digest;
+    if (!expectedDigest || !/^[a-f0-9]{64}$/.test(expectedDigest))
+      throw new Failure('SIGNING_INPUT_NOT_READY', 409);
     const reservation = await this.objects.reserve(owner, 'upload');
     try {
       const stored = await this.objects.write(
@@ -483,19 +478,10 @@ export class PersonalStorage {
         input,
         options.signal,
       );
-      if (options.expectedDigest && stored.digest !== options.expectedDigest.toLowerCase())
-        throw new Failure('CHECKSUM_MISMATCH');
+      if (stored.digest !== expectedDigest) throw new Failure('CHECKSUM_MISMATCH');
       const persisted = await this.objects.db.query(
-        "UPDATE uploads u SET size=$4,digest=$5,status='ready',provenance=COALESCE($6,provenance),expires_at=$7 WHERE id=$1 AND owner_id=$2 AND status='receiving' AND delete_requested_at IS NULL AND EXISTS(SELECT 1 FROM signing_jobs j JOIN apple_connections c ON c.id=j.connection_id AND c.owner_id=j.owner_id WHERE j.id=$3 AND j.upload_id=u.id AND j.state='receiving' AND c.state='ready' AND c.generation=j.connection_generation) RETURNING id",
-        [
-          uploadId,
-          owner,
-          options.jobId,
-          stored.size,
-          stored.digest,
-          options.provenance ? JSON.stringify(options.provenance) : null,
-          Number.MAX_SAFE_INTEGER,
-        ],
+        "UPDATE uploads u SET size=$4,status='ready',expires_at=$6 WHERE id=$1 AND owner_id=$2 AND digest=$5 AND status='receiving' AND delete_requested_at IS NULL AND EXISTS(SELECT 1 FROM signing_jobs j JOIN apple_connections c ON c.id=j.connection_id AND c.owner_id=j.owner_id WHERE j.id=$3 AND j.upload_id=u.id AND j.state='receiving' AND c.state='ready' AND c.generation=j.connection_generation) RETURNING id",
+        [uploadId, owner, options.jobId, stored.size, expectedDigest, Number.MAX_SAFE_INTEGER],
       );
       if (!persisted.rows.length) throw new Failure('SIGNING_INPUT_NOT_READY', 409);
       return { id: uploadId, ...stored };
@@ -519,13 +505,6 @@ export class PersonalStorage {
     return this.objects.handle('upload', key, async () => {
       if ((await load()) !== key) throw new Failure('NOT_FOUND', 404);
     });
-  }
-  async recoverInterrupted() {
-    await this.objects.recover();
-    await this.objects.db.query(
-      "UPDATE imports SET state=CASE WHEN upload_id IS NULL THEN 'failed' ELSE 'uploaded' END,attempt_token=NULL WHERE state='downloading' AND lease_expires<=$1",
-      [this.objects.now()],
-    );
   }
   async cleanup() {
     const rows = await this.objects.db.query<{

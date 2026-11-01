@@ -1,17 +1,8 @@
 import type { Readable } from 'node:stream';
 export type UploadOptions = {
-  uploadId?: string;
-  jobId?: string;
-  expectedDigest?: string;
-  provenance?: unknown;
+  uploadId: string;
+  jobId: string;
   signal?: AbortSignal;
-  selection?: {
-    sourceId: string;
-    releaseId: string;
-    snapshot: string;
-  };
-  importId?: string;
-  importToken?: string;
 };
 export interface FileReadHandle {
   stat(): Promise<{
@@ -23,15 +14,13 @@ export interface FileReadHandle {
 export interface StoragePort {
   upload(
     ownerId: string,
-    name: string,
     input: AsyncIterable<Uint8Array>,
-    options?: UploadOptions,
+    options: UploadOptions,
   ): Promise<{
     id: string;
     size: number;
     digest: string;
   }>;
   read(ownerId: string, uploadId: string): Promise<FileReadHandle>;
-  recoverInterrupted(): Promise<void>;
   cleanup(): Promise<void>;
 }

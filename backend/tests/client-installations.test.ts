@@ -8,10 +8,8 @@ import { connectionFixture, deviceFixture, loginFixture } from './helpers/login'
 import { ClientInstallations } from '../packages/core/src/application/client-installations';
 import { LocalClientRelease } from '../packages/core/src/infrastructure/client-release';
 import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
-import { ReceiveUpload } from '../packages/core/src/application/receive-upload';
 import { PersonalObjects, PersonalStorage } from '../packages/core/src/library/personal-storage';
 import { Tickets } from '../packages/core/src/library/tickets';
-import { RequestAuthorization } from '../packages/core/src/application/request-authorization';
 import { DeviceOnboarding } from '../packages/core/src/devices/onboarding';
 import { Failure } from '../packages/core/src/shared';
 const directories: string[] = [];
@@ -38,8 +36,7 @@ async function fixture() {
   });
   await objects.recover();
   const jobs = new JobLifecycle(db, () => 1000),
-    storage = new PersonalStorage(objects),
-    receive = new ReceiveUpload(db, storage, jobs);
+    storage = new PersonalStorage(objects);
   const release = new LocalClientRelease({
     ISIGN_CLIENT_IPA_PATH: file,
     ISIGN_CLIENT_IPA_SHA256: digest,
@@ -61,8 +58,7 @@ async function fixture() {
     db,
     release,
     jobs,
-    receive,
-    authorization: new RequestAuthorization(db),
+    storage,
     devices,
     tickets: new Tickets(
       db,
@@ -91,9 +87,7 @@ it('persists one pinned source and job across concurrent repeated keys and a new
     jobId: results[0].jobId,
     state: 'queued',
   });
-  expect((await f.db.query('SELECT digest,provenance FROM uploads')).rows).toEqual([
-    { digest: f.digest, provenance: { kind: 'isign-client', sha256: f.digest } },
-  ]);
+  expect((await f.db.query('SELECT digest FROM uploads')).rows).toEqual([{ digest: f.digest }]);
   const other = await deviceFixture(f.db, f.user.ownerId, f.connection.id, 'Other', '18.0');
   await expect(f.installer.begin(f.user.ownerId, { ...input, deviceId: other.id })).rejects.toThrow(
     'IDEMPOTENCY_BINDING_MISMATCH',
@@ -146,7 +140,7 @@ it('requires the installer table at startup', async () => {
   await f.db.query('DROP TABLE client_installations');
   await expect(assertInitializedDatabase(f.db)).rejects.toThrow('DATABASE_UNINITIALIZED');
 });
-it('issues tickets only for the operation artifact under current authority and verified source provenance', async () => {
+it('issues tickets only for the operation artifact under current authority and verified client digest', async () => {
   const f = await fixture(),
     result = await f.installer.begin(f.user.ownerId, { deviceId: f.device.id, key: 'ready' });
   await expect(f.installer.ticket(f.user.ownerId, result.operationId)).rejects.toThrow(
@@ -177,7 +171,7 @@ it('issues tickets only for the operation artifact under current authority and v
     ticket: expect.any(String),
     expiresAt: 20000,
   });
-  await f.db.query("UPDATE uploads SET provenance='{}'::jsonb");
+  await f.db.query('UPDATE uploads SET digest=$1', ['b'.repeat(64)]);
   await expect(f.installer.view(f.user.ownerId, result.operationId)).rejects.toThrow('NOT_FOUND');
 });
 it('allows an existing shared Apple grant and immediately fences revoked grants', async () => {
@@ -235,21 +229,70 @@ it('does not enqueue a changed template after the initial release inspection', a
   expect((await f.db.query("SELECT id FROM jobs WHERE state='queued'")).rows).toEqual([]);
   expect((await f.db.query("SELECT id FROM personal_objects WHERE state='live'")).rows).toEqual([]);
 });
+it('rejects bytes that do not match the reserved client digest without publishing a source', async () => {
+  const f = await fixture();
+  const installer = new ClientInstallations({
+    ...f.options,
+    release: {
+      status: f.options.release.status.bind(f.options.release),
+      open: async () => ({
+        digest: f.digest,
+        bytes: (async function* () {
+          yield Buffer.from('different IPA');
+        })(),
+      }),
+    },
+  });
+  expect(
+    await installer.begin(f.user.ownerId, { deviceId: f.device.id, key: 'wrong-bytes' }),
+  ).toMatchObject({ state: 'failed', reason: 'CHECKSUM_MISMATCH' });
+  expect((await f.db.query('SELECT digest,status FROM uploads')).rows).toEqual([
+    { digest: f.digest, status: 'receiving' },
+  ]);
+  expect((await f.db.query("SELECT id FROM personal_objects WHERE state='live'")).rows).toEqual([]);
+});
+it('replays a persisted client request after a server upgrade without creating another job', async () => {
+  const f = await fixture(),
+    input = { deviceId: f.device.id, key: 'persisted' };
+  const operation = await f.installer.begin(f.user.ownerId, input);
+  const { hash } = await import('../packages/core/src/shared');
+  const { canonicalReport } = await import('../packages/core/src/shared/canonical-json');
+  // Persisted fingerprint from the previous client installer, before its generic arguments were removed.
+  const fingerprint = hash(
+    canonicalReport({
+      name: 'iSign Client.ipa',
+      source: 'upload',
+      deviceId: f.device.id,
+      connectionId: f.connection.id,
+      generation: 1,
+      connectionOwnerId: f.user.ownerId,
+      grantId: null,
+      grantGeneration: null,
+      provenance: { kind: 'isign-client', sha256: f.digest },
+    }),
+  );
+  await f.db.query('UPDATE jobs SET request_digest=$1 WHERE id=$2', [fingerprint, operation.jobId]);
+  expect(await new ClientInstallations(f.options).begin(f.user.ownerId, input)).toMatchObject({
+    operationId: operation.operationId,
+    jobId: operation.jobId,
+  });
+  expect((await f.db.query('SELECT id FROM jobs')).rows).toHaveLength(1);
+});
 it('recovers a process-interrupted receive as the same failed operation on restart', async () => {
   const f = await fixture(),
     key = 'restart';
   const { hash } = await import('../packages/core/src/shared');
-  const submission = await f.jobs.beginSubmission(f.user.ownerId, {
+  const submission = await f.jobs.beginClientInstallation(f.user.ownerId, {
     deviceId: f.device.id,
     key: 'client_' + hash(key),
-    name: 'iSign Client.ipa',
-    source: 'upload',
-    provenance: { kind: 'isign-client', sha256: f.digest },
+    releaseSha256: f.digest,
   });
   await f.db.query(
     "INSERT INTO client_installations(id,owner_id,request_key,job_id,device_id,release_sha256,receive_started_at,created_at) VALUES('interrupted',$1,$2,$3,$4,$5,1000,1000)",
     [f.user.ownerId, key, submission.jobId, f.device.id, f.digest],
   );
+  // An interrupted transfer from an earlier server can have no verified digest yet.
+  await f.db.query("UPDATE uploads SET digest='' WHERE id=$1", [submission.uploadId]);
   await f.jobs.recoverReceiving();
   expect(
     await new ClientInstallations(f.options).begin(f.user.ownerId, { deviceId: f.device.id, key }),
@@ -264,7 +307,16 @@ it('recovers a process-interrupted receive as the same failed operation on resta
 it('cleans installation locators when the existing job retention lifecycle deletes jobs', async () => {
   const f = await fixture(),
     result = await f.installer.begin(f.user.ownerId, { deviceId: f.device.id, key: 'cleanup' });
-  await f.jobs.cancel(f.user.ownerId, result.jobId);
+  const { ConnectionLifecycle } = await import('../packages/core/src/apple/connection-lifecycle');
+  const { SessionService } = await import('../packages/core/src/auth/sessions');
+  await new ConnectionLifecycle(
+    f.db,
+    () => 1000,
+    new SessionService(f.db, { now: () => 1000 }),
+  ).disconnectFor(f.user.ownerId);
+  expect((await f.db.query('SELECT state FROM jobs WHERE id=$1', [result.jobId])).rows).toEqual([
+    { state: 'cancelled' },
+  ]);
   const { cleanupHistory } = await import('../packages/core/src/library/installation-history');
   await cleanupHistory(f.db, 1000 + 2592000000);
   expect((await f.db.query('SELECT id FROM client_installations')).rows).toEqual([]);

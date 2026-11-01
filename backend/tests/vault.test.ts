@@ -1,3 +1,4 @@
+import { queuedJobFixture } from './helpers/job';
 import { loginFixture, connectionFixture, deviceFixture } from './helpers/login';
 import { it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
@@ -35,7 +36,7 @@ it('envelope encryption never persists plaintext and requires current owner job 
       [owner],
     );
     const d = await deviceFixture(s.db, owner, c.id, 'Synthetic device', '18.0');
-    const j = await s.enqueue(owner, 'u', 'one');
+    const j = await queuedJobFixture(s, owner, 'u', 'one');
     await db.query(
       'UPDATE jobs SET connection_id=$2,connection_generation=1,device_id=$3 WHERE id=$1',
       [j.id, c.id, d.id],
@@ -93,7 +94,7 @@ it('rechecks tombstone after asynchronous KMS unwrap and returns no stale secret
       [owner],
     );
     const d = await deviceFixture(s.db, owner, c.id, 'Synthetic device', '18.0');
-    const j = await s.enqueue(owner, 'u', 'one');
+    const j = await queuedJobFixture(s, owner, 'u', 'one');
     await db.query(
       'UPDATE jobs SET connection_id=$2,connection_generation=1,device_id=$3 WHERE id=$1',
       [j.id, c.id, d.id],

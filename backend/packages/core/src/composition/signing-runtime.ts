@@ -37,8 +37,8 @@ type Inputs = {
   storage: StoragePort;
   artifactStore: ArtifactStore;
   now?: () => number;
-  provision?: PipelineProvisioner;
-  canPreserve?: (grant: ExecutorGrant, bundleId: string) => Promise<boolean>;
+  provision: PipelineProvisioner;
+  canPreserve: (grant: ExecutorGrant, bundleId: string) => Promise<boolean>;
 };
 export function createProductionPipeline(input: Inputs, config: ProductionPipelineConfig) {
   if (
@@ -51,17 +51,6 @@ export function createProductionPipeline(input: Inputs, config: ProductionPipeli
     attestor = new HmacExecutorAttestor(config.proofKey),
     rpc = new ScopedBrokerRpc(config),
     publisher = new Publisher(input.db, input.artifactStore, attestor, input.now ?? Date.now);
-  const provision: PipelineProvisioner =
-    input.provision ??
-    (async ({ grant, analysis, targets, signal }) => {
-      if (signal.aborted) throw new Failure('EXECUTOR_CANCELLED', 409);
-      const result = await rpc.call<Awaited<ReturnType<PipelineProvisioner>>>('provision', grant, {
-        analysis,
-        targets,
-      });
-      if (signal.aborted) throw new Failure('EXECUTOR_CANCELLED', 409);
-      return result;
-    });
   const coordinator = new PipelineCoordinator({
     db: input.db,
     service: input.service,
@@ -73,28 +62,10 @@ export function createProductionPipeline(input: Inputs, config: ProductionPipeli
       verify: (report: AnalysisReport, signature: string) =>
         attestor.verify(report as never, signature),
     },
-    provision,
-    canPreserve:
-      input.canPreserve ??
-      (async (grant, bundleId) => {
-        const result = await rpc.call<{
-          identifier: string;
-          owned: boolean;
-        }>('bundle-ownership', grant, { bundleId });
-        if (result.identifier !== bundleId || typeof result.owned !== 'boolean')
-          throw new Failure('BUNDLE_OWNERSHIP_PROOF_INVALID', 403);
-        return result.owned;
-      }),
+    provision: input.provision,
+    canPreserve: input.canPreserve,
     now: input.now,
     maxRuntimeMs: config.maxRuntimeMs,
-  });
-  const bootstrapPort = new DatabaseBootstrapPort({
-    db: input.db,
-    now: input.now,
-    prepareIdentity: (lease) => rpc.call<BootstrapIdentity>('bootstrap-prepare', lease, {}),
-    findCertificates: (lease, spkiSha256) =>
-      rpc.call('bootstrap-find-certificates', lease, { spkiSha256 }),
-    createCertificate: (lease, csr) => rpc.call('bootstrap-create-certificate', lease, { csr }),
   });
   const checkReady = async () => {
     const protocols = await rpc.call<{
@@ -112,8 +83,6 @@ export function createProductionPipeline(input: Inputs, config: ProductionPipeli
       throw new Failure('NATIVE_PIPELINE_PROTOCOL_UNSUPPORTED', 503);
   };
   const kickoff = async (ownerId: string, jobId: string, deviceId: string) => {
-    if (!input.provision || !input.canPreserve)
-      throw new Failure('PRODUCTION_PROVISIONER_UNAVAILABLE', 503);
     await checkReady();
     return coordinator.kickoff(ownerId, jobId, deviceId);
   };
@@ -124,8 +93,6 @@ export function createProductionPipeline(input: Inputs, config: ProductionPipeli
     publisher,
     retireLaunch: (nonce: string) => provider.retireLaunch(nonce),
     retireExecutor: (grant: ExecutorGrant) => provider.destroyInstance(grant.isolationInstanceId),
-    bootstrap: new TeamBootstrap(bootstrapPort, input.now ?? Date.now),
-    bootstrapPort,
   };
 }
 /** Runtime-facing composition; missing transport/protocol configuration remains fail closed. */
@@ -176,6 +143,8 @@ export function composeProductionPipeline(input: {
       bootstrap: true,
     },
   };
+  if (!input.provision || !input.canPreserve)
+    return { diagnostics: ['PRODUCTION_PROVISIONER_UNAVAILABLE'] };
   const pipeline = createProductionPipeline(
     {
       db: input.kernel.db,
@@ -191,18 +160,13 @@ export function composeProductionPipeline(input: {
     ? createProductionBootstrap(input.bootstrap, config)
     : undefined;
   return {
-    kickoff: input.provision && input.canPreserve ? pipeline.kickoff : undefined,
+    kickoff: pipeline.kickoff,
     checkReady: pipeline.checkReady,
     bootstrap,
     retireExecutor: pipeline.retireExecutor,
     retireLaunch: pipeline.retireLaunch,
     cmsVerifier: createProductionDeviceVerifier(config),
     diagnostics: [
-      ...(!input.provision || !input.canPreserve
-        ? [
-            'PRODUCTION_PROVISIONER_UNAVAILABLE: lease-scoped Apple planner and sealed guest material delivery are not configured',
-          ]
-        : []),
       ...(bootstrap
         ? []
         : [

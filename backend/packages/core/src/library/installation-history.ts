@@ -20,7 +20,6 @@ export async function cleanupHistory(db: Database, now: number) {
       await tx.query('DELETE FROM artifacts WHERE job_id=$1', [job.id]);
       await tx.query('UPDATE personal_objects SET job_id=NULL WHERE job_id=$1', [job.id]);
       await tx.query('DELETE FROM jobs WHERE id=$1', [job.id]);
-      await tx.query('DELETE FROM imports WHERE upload_id=$1', [job.upload_id]);
       await tx.query(
         'DELETE FROM uploads WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM jobs WHERE upload_id=$1)',
         [job.upload_id],

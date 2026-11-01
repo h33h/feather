@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { afterEach, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -41,9 +42,8 @@ async function fixture() {
   });
   await objects.recover();
   const queue = new JobLifecycle(db, () => now);
-  const submission = await queue.beginSubmission('o', {
-    name: 'App.ipa',
-    source: 'upload',
+  const submission = await queue.beginClientInstallation('o', {
+    releaseSha256: createHash('sha256').update('source').digest('hex'),
     key: 'key',
     deviceId: 'd',
   });
@@ -60,12 +60,7 @@ async function fixture() {
 }
 it('stores the source against the admitted job and removes it after terminal cleanup', async () => {
   const { db, storage, queue, submission } = await fixture();
-  const upload = await storage.upload(
-    'o',
-    'App.ipa',
-    Readable.from([Buffer.from('source')]),
-    submission,
-  );
+  const upload = await storage.upload('o', Readable.from([Buffer.from('source')]), submission);
   expect(upload.id).toBe(submission.uploadId);
   await queue.completeSource('o', submission.jobId);
   const lease = await queue.claim(submission.jobId, 'o');
@@ -80,7 +75,7 @@ it('stores the source against the admitted job and removes it after terminal cle
 });
 it('retains the source during the single automatic retry even past the previous source retention period', async () => {
   const { storage, queue, submission, setNow } = await fixture();
-  await storage.upload('o', 'App.ipa', Readable.from([Buffer.from('source')]), submission);
+  await storage.upload('o', Readable.from([Buffer.from('source')]), submission);
   await queue.completeSource('o', submission.jobId);
   const lease = await queue.claim(submission.jobId, 'o');
   await queue.finishAttempt(

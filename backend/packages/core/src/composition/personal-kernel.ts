@@ -11,21 +11,17 @@ import { JobLifecycle } from '../signing/job-lifecycle';
 import { ProductionDatabase, type SqlPool } from '../infrastructure/postgres';
 import { createPostgresPool, safeBigint } from '../infrastructure/postgres-pool';
 import { postgresQuery } from '../infrastructure/postgres-query';
-import {
-  loadProviderConfig,
-  providerDiagnostics,
-  type PersonalConfig,
-} from '../infrastructure/config';
+import { loadProviderConfig, type PersonalConfig } from '../infrastructure/config';
 import { ProviderError } from '../shared/errors';
 import { LocalEnvelopeKms } from '../infrastructure/local-kms';
 import { Vault } from '../apple/vault';
-import { Tickets } from '../library/tickets';
 import { CatalogRegistry } from '../catalog/registry';
 import { SecretDeletionWorker } from '../apple/secret-deletion';
 export async function createPersonalRuntimeKernel(options: {
   env: Record<string, string | undefined>;
   pool?: SqlPool;
   now?: () => number;
+  onSourceReady?: (owner: string, job: string, device: string) => Promise<unknown>;
 }) {
   const config = loadProviderConfig(options.env);
   if (config.mode !== 'personal') throw new ProviderError('PERSONAL_RUNTIME_REQUIRED');
@@ -70,7 +66,7 @@ export async function createPersonalRuntimeKernel(options: {
       accounts = new AccountLifecycle(db, now, sessions),
       connections = new ConnectionLifecycle(db, now, sessions),
       deviceActions = new DeviceActions(db, now),
-      jobs = new JobLifecycle(db, now),
+      jobs = new JobLifecycle(db, now, options.onSourceReady),
       auth = new PersonalAuth(db, config.origin, now),
       vault = new Vault(db, kms, now);
     await jobs.recoverReceiving();
@@ -91,10 +87,8 @@ export async function createPersonalRuntimeKernel(options: {
       auth,
       admin: new AdminUsers(db, auth, now),
       vault,
-      tickets: new Tickets(db, now),
       catalogs,
       secretDeletionWorker: new SecretDeletionWorker(db, vault, now),
-      diagnostics: providerDiagnostics(config),
     };
   } catch (error) {
     await db.close();

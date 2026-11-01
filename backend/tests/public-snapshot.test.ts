@@ -1,3 +1,4 @@
+import { queuedJobFixture } from './helpers/job';
 import { loginFixture, connectionFixture, deviceFixture } from './helpers/login';
 import { it, expect } from 'vitest';
 import { createDatabase } from './helpers/database';
@@ -63,7 +64,7 @@ it('public readiness follows current connection generation without exposing full
       "INSERT INTO uploads(id,owner_id,name,object_key,size,digest,status,created_at,expires_at) VALUES('snapshot-u',$1,'synthetic.ipa','synthetic.ipa',1,'synthetic','uploaded',0,999999)",
       [login.ownerId],
     );
-    const j = await s.enqueue(login.ownerId, 'snapshot-u', 'snapshot');
+    const j = await queuedJobFixture(s, login.ownerId, 'snapshot-u', 'snapshot');
     await db.query(
       "UPDATE jobs SET state='ready',device_id=$2,connection_id=$3,connection_generation=1 WHERE id=$1",
       [j.id, d.id, c.id],

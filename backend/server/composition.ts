@@ -13,8 +13,6 @@ import { ProfileDiagnostics } from '../packages/core/src/devices/profile-diagnos
 import { createRunnerAuthorizer } from '../packages/core/src/application/request-runner-authorization';
 import { ReceiveDeviceCallback } from '../packages/core/src/application/receive-device-callback';
 import { RequestLifecycle } from '../packages/core/src/application/request-lifecycle';
-import { RequestAuthorization } from '../packages/core/src/application/request-authorization';
-import { ReceiveUpload } from '../packages/core/src/application/receive-upload';
 import { RuntimeReadiness } from '../packages/core/src/application/runtime-readiness';
 import { SigningReadiness } from '../packages/core/src/application/signing-readiness';
 import { SigningExecution } from '../packages/core/src/application/signing-execution';
@@ -38,7 +36,6 @@ import { QueuedDispatcher } from '../packages/core/src/signing/queued-dispatcher
 import { ProductionProvisioner } from '../packages/core/src/signing/provisioner';
 import { DeviceEligibilityProbe } from '../packages/core/src/devices/eligibility';
 import { BootstrapSealing } from '../packages/core/src/apple/bootstrap-sealing';
-import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
 import {
   composeProductionPipeline,
   type ProductionPipelineConfig,
@@ -82,7 +79,11 @@ function appleClient(
   );
 }
 async function production() {
-  const kernel = await createPersonalRuntimeKernel({ env: process.env });
+  let dispatcher: QueuedDispatcher;
+  const kernel = await createPersonalRuntimeKernel({
+    env: process.env,
+    onSourceReady: (owner, job) => dispatcher.trigger(owner, job),
+  });
   const {
     db,
     sessions,
@@ -93,6 +94,7 @@ async function production() {
     catalogs,
     artifacts,
     vault,
+    jobs,
   } = kernel;
   const nativeSessions = new NativeSessions(db, {
     origin,
@@ -167,16 +169,7 @@ async function production() {
   );
   const kickoff = pipeline.kickoff ? execution.run.bind(execution) : undefined;
   const retireLaunch = pipeline.retireLaunch ? execution.retireLaunch.bind(execution) : undefined;
-  const dispatcher = new QueuedDispatcher(db, Date.now, kickoff);
-  const jobs = new JobLifecycle(
-    db,
-    Date.now,
-    pipeline.kickoff
-      ? async (owner, job) => {
-          await dispatcher.trigger(owner, job);
-        }
-      : undefined,
-  );
+  dispatcher = new QueuedDispatcher(db, Date.now, kickoff);
   void jobs
     .recoverLeases(pipeline.retireExecutor, retireLaunch)
     .then(() => dispatcher.dispatch())
@@ -230,14 +223,11 @@ async function production() {
     bootstrap,
   );
   const connectApple = new ConnectApple(onboarding, bootstrap);
-  const receiveUpload = new ReceiveUpload(db, storage, jobs);
-  const authorization = new RequestAuthorization(db);
   const clientInstaller = new ClientInstallations({
     db,
     release: new LocalClientRelease(process.env),
     jobs,
-    receive: receiveUpload,
-    authorization,
+    storage,
     devices,
     tickets,
     now: Date.now,
@@ -310,8 +300,8 @@ async function production() {
         name: 'lifecycle',
         intervalMs: 60000,
         run: () =>
-          storage
-            .recoverInterrupted()
+          storage.objects
+            .recover()
             .then(() => storage.cleanup())
             .then(() => artifacts.cleanup())
             .then(() => jobs.recoverLeases(pipeline.retireExecutor, retireLaunch))
