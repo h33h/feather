@@ -79,6 +79,8 @@ class VerificationTests(unittest.TestCase):
                 entitlements=ent,
                 profileRequired=True,
             )
+            component["sourceBundleId"] = component["bundleId"]
+            component["sourceEntitlements"] = {}
             task = {
                 "identity": identity,
                 "udid": "TEST-UDID",
@@ -86,6 +88,7 @@ class VerificationTests(unittest.TestCase):
                 "components": [component],
             }
             grant = {
+                "connectionOwnerId": "o",
                 "ownerId": "o",
                 "jobId": "j",
                 "leaseToken": "l",

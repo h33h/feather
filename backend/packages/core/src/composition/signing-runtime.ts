@@ -132,7 +132,7 @@ export function createProductionPipeline(input: Inputs, config: ProductionPipeli
 export function composeProductionPipeline(input: {
   kernel: {
     db: Database;
-    service: JobLeaseService;
+    jobs: JobLeaseService;
     storage: StoragePort;
     artifacts: ArtifactStore;
   };
@@ -179,7 +179,7 @@ export function composeProductionPipeline(input: {
   const pipeline = createProductionPipeline(
     {
       db: input.kernel.db,
-      service: input.kernel.service,
+      service: input.kernel.jobs,
       storage: input.kernel.storage,
       artifactStore: input.kernel.artifacts,
       provision: input.provision,
@@ -272,6 +272,7 @@ export function createProductionBootstrap(
             .launch({
               ownerId: lease.ownerId,
               jobId: 'bootstrap:' + lease.nonce,
+              launchNonce: token(),
               signal: controller.signal,
               maxRuntimeMs: 120000,
               maxInputBytes: 16384,
@@ -341,8 +342,33 @@ export function createProductionDeviceVerifier(
       createHash('sha256').update(input.cms).digest('hex') !== input.cmsSha256
     )
       throw new Failure('CONTROL_PROFILE_DIGEST_MISMATCH', 403);
+    const access = input.binding;
+    const shared = access.ownerId !== access.connectionOwnerId;
+    if (
+      shared &&
+      (typeof access.accessGrantId !== 'string' ||
+        !access.accessGrantId ||
+        !Number.isSafeInteger(access.accessGrantGeneration) ||
+        (access.accessGrantGeneration ?? 0) < 1)
+    )
+      throw new Failure('APPLE_ACCESS_UNAVAILABLE', 403);
+    if (!shared && (access.accessGrantId != null || access.accessGrantGeneration != null))
+      throw new Failure('APPLE_ACCESS_UNAVAILABLE', 403);
     const nonce = token(),
-      binding = { ...input.binding, nonce, expiresAt: Date.now() + 120000 };
+      binding = {
+        ownerId: access.ownerId,
+        connectionOwnerId: access.connectionOwnerId,
+        connectionId: access.connectionId,
+        generation: access.generation,
+        nonce,
+        expiresAt: Date.now() + 120000,
+        ...(shared
+          ? {
+              accessGrantId: access.accessGrantId,
+              accessGrantGeneration: access.accessGrantGeneration,
+            }
+          : {}),
+      };
     const controller = new AbortController();
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const expired = new Promise<never>((_, reject) => {
@@ -359,6 +385,7 @@ export function createProductionDeviceVerifier(
           .launch({
             ownerId: binding.ownerId,
             jobId: 'device-eligibility:' + nonce,
+            launchNonce: nonce,
             signal: controller.signal,
             maxRuntimeMs: 120000,
             maxInputBytes: 65536,

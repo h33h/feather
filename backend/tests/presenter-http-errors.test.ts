@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { presentLibrary } from '../server/http/presenters';
+import { presentApple } from '../server/http/presenters';
 const state = vi.hoisted(() => ({ app: null as unknown }));
 vi.mock('../server/runtime', () => ({
   origin: 'https://contracts.invalid',
@@ -11,12 +11,11 @@ import { handle } from '../server/http/router';
 beforeEach(() => {
   const session = { ownerId: 'o', role: 'admin', loginName: 'owner' };
   state.app = {
-    service: {
+    sessions: {
       session: async () => session,
       authorizeWrite: async () => session,
       fresh: async () => {},
     },
-    authorization: { requireAdmin: async () => {} },
     connectApple: async () => ({}),
     sharing: { list: async () => [] },
     queries: { apple: async () => ({ connection: 'malformed' }) },
@@ -25,7 +24,7 @@ beforeEach(() => {
 it('keeps output validation diagnostics in an internal error cause', () => {
   const failure = (() => {
     try {
-      presentLibrary({});
+      presentApple({});
     } catch (error) {
       return error;
     }

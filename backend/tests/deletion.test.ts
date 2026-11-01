@@ -1,21 +1,21 @@
+import { ConnectionLifecycle } from '../packages/core/src/apple/connection-lifecycle';
 import { loginFixture, connectionFixture } from './helpers/login';
 import { it, expect } from 'vitest';
 import { createDatabase } from './helpers/database';
-import { Service } from '../packages/core/src/application/service';
+import { SessionService } from '../packages/core/src/auth/sessions';
 import { Vault } from '../packages/core/src/apple/vault';
 import { SecretDeletionWorker } from '../packages/core/src/apple/secret-deletion';
 it('persists secret deletion before disconnect and retries failed revocation without releasing ciphertext', async () => {
   const db = await createDatabase();
   try {
-    let code = '',
-      now = 10000,
+    let now = 10000,
       fail = true,
       revoked = 0;
-    const s = new Service(db, {
+    const s = new SessionService(db, {
       now: () => now,
     });
-    const session = await loginFixture(s.db, 'delete@example.invalid', s.now),
-      c = await connectionFixture(s.db, session.ownerId, 'TEAM-DELETE');
+    const session = await loginFixture(db, 'delete@example.invalid', s.now),
+      c = await connectionFixture(db, session.ownerId, 'TEAM-DELETE');
     const vault = new Vault(
       db,
       {
@@ -34,7 +34,7 @@ it('persists secret deletion before disconnect and retries failed revocation wit
       'distribution-key',
       Buffer.from('synthetic fixture'),
     );
-    await s.disconnect(
+    await new ConnectionLifecycle(db, () => s.now, s).disconnect(
       session.token,
       session.csrf,
       'http://localhost:3000',

@@ -157,37 +157,22 @@ export class TestDatabasePool {
   }
 }
 
-const pools = new Map<string, TestDatabasePool>();
+const pool = new TestDatabasePool(createFreshDatabase);
 let cleaning = false;
 let finished = false;
 afterEach(async () => {
   cleaning = true;
   try {
-    await Promise.all([...pools.values()].map((pool) => pool.releaseAll()));
+    await Promise.all([pool.releaseAll()]);
   } finally {
     cleaning = false;
   }
 });
 afterAll(async () => {
   finished = true;
-  await Promise.all([...pools.values()].map((pool) => pool.close()));
+  await Promise.all([pool.close()]);
 });
-export function createDatabase(...migrations: string[]) {
+export function createDatabase() {
   if (finished || cleaning) throw new Error('TEST_DATABASE_FIXTURE_OUTSIDE_TEST');
-  const key = JSON.stringify(migrations);
-  let pool = pools.get(key);
-  if (!pool) {
-    pool = new TestDatabasePool(async () => {
-      const db = await createFreshDatabase();
-      try {
-        for (const migration of migrations) await db.exec(migration);
-      } catch (error) {
-        await db.close();
-        throw error;
-      }
-      return db;
-    });
-    pools.set(key, pool);
-  }
   return pool.acquire();
 }

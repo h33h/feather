@@ -49,17 +49,29 @@ actor DelayedTransport: ISignTransport {
         await transport.respond("logout", Data("{}".utf8)); await logout.value
         XCTAssertTrue(vault.values.isEmpty); XCTAssertNil(client.owner)
     }
-    func testLateBundleAndSourcesCannotRepopulateAfterServerSwitch() async throws {
-        for (path, switchServer) in [("signing/bundle", true), ("sources", true), ("signing/bundle", false), ("sources", false)] {
-            let transport = DelayedTransport(), vault = MemoryVault(), client = try client(transport, vault)
-            var fresh = token; fresh.expiresAt = 9999999999999
-            try client.install(tokens: fresh, owner: client.owner!)
-            let task = Task { try await client.fetchAndCache(path, key: "asset") }
-            await transport.wait(path.components(separatedBy: "/").last!)
-            if switchServer { try client.changeServer(URL(string: "https://other.test")!) } else { try client.clear() }
-            await transport.respond(path.components(separatedBy: "/").last!, Data("{}".utf8))
-            do { try await task.value; XCTFail("Late asset accepted") } catch {}
-            XCTAssertTrue(vault.values.isEmpty)
+    func testLateBundleAndSourcesCannotRepopulateAfterOwnerReplacementOrClear() async throws {
+        for path in ["signing/bundle", "sources"] {
+            for operation in ["replace", "clear"] {
+                let transport = DelayedTransport(), vault = MemoryVault(), client = try client(transport, vault)
+                var fresh = token; fresh.expiresAt = 9999999999999
+                try client.install(tokens: fresh, owner: client.owner!)
+                let generation = client.generation
+                let task = Task {
+                    let data = try await client.raw(path)
+                    try client.cache(data, key: "asset", generation: generation)
+                }
+                await transport.wait(path.components(separatedBy: "/").last!)
+                switch operation {
+                case "replace":
+                    var owner = client.owner!; owner.ownerId = "two"
+                    try client.install(tokens: fresh, owner: owner)
+                default: try client.clear()
+                }
+                await transport.respond(path.components(separatedBy: "/").last!, Data("{}".utf8))
+                do { try await task.value; XCTFail("Late asset accepted") } catch {}
+                XCTAssertNil(try client.cached("asset"))
+                XCTAssertEqual(client.owner?.ownerId, operation == "replace" ? "two" : nil)
+            }
         }
     }
     func testCallbackRequiresExactEndpointStateAndTransaction() throws {
@@ -121,9 +133,13 @@ actor DelayedTransport: ISignTransport {
         let transport = DelayedTransport(), vault = MemoryVault(), client = try client(transport, vault)
         var fresh = token; fresh.expiresAt = 9999999999999
         try client.install(tokens: fresh, owner: client.owner!)
-        let task = Task { try await client.fetchAndCache("signing/bundle", key: "bundle") }
+        let scope = client.signingScope
+        let task = Task {
+            let data = try await client.raw("signing/bundle", method: "POST", body: [:])
+            try client.cacheSigning(data, key: "bundle", scope: scope)
+        }
         await transport.wait("bundle")
-        try client.resetManaged()
+        try client.invalidateSigning()
         await transport.respond("bundle", Data("old".utf8))
         do { try await task.value; XCTFail("Old connection asset accepted") } catch {}
         XCTAssertNil(try client.cached("bundle")); XCTAssertEqual(client.owner?.ownerId, "one")
@@ -133,6 +149,19 @@ actor DelayedTransport: ISignTransport {
     func testMissingSessionPurgesOrphanedAssetsBeforeNewLogin() throws {
         let vault = MemoryVault(); vault.values["bundle"] = Data("previous owner".utf8)
         _ = try ISignClient(server: URL(string: "https://example.test")!, vault: vault, transport: DelayedTransport())
+        XCTAssertTrue(vault.values.isEmpty)
+    }
+
+    func testSessionWithoutSigningAuthorityMarkerCannotRestoreCachedMaterial() throws {
+        let transport = DelayedTransport(), vault = MemoryVault(), client = try client(transport, vault)
+        try client.cacheSigning(Data("private".utf8), key: "bundle", scope: client.signingScope)
+        var saved = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(vault.values["session"])) as? [String: Any])
+        saved.removeValue(forKey: "signingInvalidated")
+        vault.values["session"] = try JSONSerialization.data(withJSONObject: saved)
+
+        let restored = try ISignClient(server: URL(string: "https://example.test")!, vault: vault, transport: transport)
+        XCTAssertNil(restored.owner)
+        XCTAssertNil(try restored.cached("bundle"))
         XCTAssertTrue(vault.values.isEmpty)
     }
 

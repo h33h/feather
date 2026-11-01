@@ -25,20 +25,10 @@ class OptionsManager: ObservableObject {
 		
 		if let data = UserDefaults.standard.data(forKey: _key) {
 			do {
-				let savedDict = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-				
-				let defaultData = try JSONEncoder().encode(defaults)
-				var mergedDict = try JSONSerialization.jsonObject(with: defaultData) as? [String: Any] ?? [:]
-
-				for (key, value) in savedDict {
-					mergedDict[key] = value
-				}
-				
-				let mergedData = try JSONSerialization.data(withJSONObject: mergedDict)
-				self.options = try JSONDecoder().decode(Options.self, from: mergedData)
+				self.options = try JSONDecoder().decode(Options.self, from: data)
 				return
 			} catch {
-				print("Failed to decode or merge options, falling back to defaults :/ \(error)")
+				print("Failed to decode options, using defaults :/ \(error)")
 			}
 		}
 		
@@ -218,13 +208,11 @@ struct Options: Codable, Equatable {
 	enum SigningOption: String, Codable, CaseIterable, LocalizedDescribable {
 		case `default`
 		case onlyModify
-//		case adhoc
 
 		var localizedDescription: String {
 			switch self {
 			case .default: .localized("Default")
 			case .onlyModify: .localized("Modify")
-//			case .adhoc: .localized("Ad-hoc")
 			}
 		}
 	}

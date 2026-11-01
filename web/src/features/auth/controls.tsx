@@ -1,7 +1,7 @@
 'use client';
 import './controls.css';
 import { Field } from '../../shared/ui';
-import { passkeyLogin } from './passkey-client';
+import { passkeyLogin } from '../../shared/api/passkey-client';
 import { useState } from 'react';
 import { DesignAsset, TaskButton } from '../../shared/ui';
 import { Toast } from '../../shared/ui/toast';
@@ -10,13 +10,6 @@ import {
   type PublicKeyCredentialCreationOptionsJSON,
 } from '@simplewebauthn/browser';
 import type { Api, Action } from '../../shared/api/contracts';
-export async function addPasskey(api: Api) {
-  const issued = await api('auth/passkey/add-options', {});
-  const response = await startRegistration({
-    optionsJSON: issued.options as PublicKeyCredentialCreationOptionsJSON,
-  });
-  return api('auth/passkey/register', { requestId: issued.requestId, response });
-}
 export function PersonalLogin({
   api,
   action,

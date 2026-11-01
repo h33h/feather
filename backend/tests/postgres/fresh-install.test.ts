@@ -45,7 +45,7 @@ it('initializes a clean PostgreSQL/key/admin and starts without schema mutations
         { login_name: 'admin', role: 'admin' },
       ]);
       expect((await kernel.db.query('SELECT kind FROM sources')).rows).toEqual([{ kind: 'iapps' }]);
-      await expect(kernel.service.session('missing')).rejects.toThrow('UNAUTHENTICATED');
+      await expect(kernel.sessions.session('missing')).rejects.toThrow('UNAUTHENTICATED');
       const competing = await createPersonalRuntimeKernel({ env }).catch((error) => error);
       expect(competing.code).toBe('PERSONAL_SINGLE_INSTANCE_REQUIRED');
     } finally {

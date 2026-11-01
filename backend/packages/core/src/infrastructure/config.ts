@@ -2,7 +2,6 @@ import { isIP } from 'node:net';
 import { inspect } from 'node:util';
 import path from 'node:path';
 import { ProviderError } from '../shared/errors';
-export { ProviderError } from '../shared/errors';
 /** Explicit disclosure is reserved for server-side provider construction. */
 export class ServerSecret {
   #value: string;

@@ -122,7 +122,6 @@ class BrokerController:
         backend,
         authorize_binding,
         control_handlers=None,
-        device_cms_verifier=None,
         sealed_materials_bridge=False,
         bootstrap_bridge=False,
         clock=lambda: int(time.time() * 1000),
@@ -155,7 +154,6 @@ class BrokerController:
         self.backend = backend
         self.authorize = authorize_binding
         self.controls = control_handlers or {}
-        self.device_cms_verifier = device_cms_verifier
         self.sealed_bridge = sealed_materials_bridge
         self.bootstrap_bridge = bootstrap_bridge
         self.clock = clock
@@ -732,39 +730,6 @@ class BrokerController:
                 "provisioning": "isign-provisioning-v1",
                 "materials": "isign-sealed-materials-v1",
             }
-        elif operation == "device-cms":
-            if (
-                not callable(self.device_cms_verifier)
-                or set(binding) != {"nonce"}
-                or set(payload) != {"cmsBase64", "policyId", "caSha256"}
-                or not isinstance(payload["cmsBase64"], str)
-                or len(payload["cmsBase64"]) > 87384
-            ):
-                raise BrokerError("DEVICE_CMS_UNAVAILABLE", 503)
-            try:
-                cms = base64.b64decode(payload["cmsBase64"], validate=True)
-            except (ValueError, TypeError):
-                raise BrokerError("DEVICE_CMS_INVALID")
-            if not cms or len(cms) > 65536:
-                raise BrokerError("DEVICE_CMS_LIMIT", 413)
-            verifier = self.device_cms_verifier
-            if payload["policyId"] != getattr(verifier, "policy_id", None) or payload[
-                "caSha256"
-            ] != getattr(verifier, "ca_sha256", None):
-                raise BrokerError("DEVICE_CMS_POLICY_MISMATCH", 403)
-            value = verifier(cms)
-            if (
-                not isinstance(value, dict)
-                or not isinstance(value.get("challenge"), str)
-                or any(value.get(k) is not True for k in ("signatureVerified", "issuerTrusted"))
-                or not re.fullmatch("[a-f0-9]{64}", str(value.get("deviceCertificate", "")))
-            ):
-                raise BrokerError("DEVICE_CMS_PROOF_INVALID", 403)
-            value = {
-                "payload": value,
-                "policyId": verifier.policy_id,
-                "caSha256": verifier.ca_sha256,
-            }
         elif operation == "material-prepare":
             if (
                 not self.sealed_bridge
@@ -811,7 +776,14 @@ class BrokerController:
                 not callable(getattr(self.backend, "device_profile_verify", None))
                 or set(binding)
                 not in (
-                    {"ownerId", "connectionId", "generation", "nonce", "expiresAt"},
+                    {
+                        "ownerId",
+                        "connectionId",
+                        "generation",
+                        "nonce",
+                        "expiresAt",
+                        "connectionOwnerId",
+                    },
                     {
                         "ownerId",
                         "connectionId",

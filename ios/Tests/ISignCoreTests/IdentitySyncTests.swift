@@ -21,7 +21,7 @@ import XCTest
         return sync
     }
     func response(_ state: String, renewal: String? = nil) -> Data {
-        Data(("{\"state\":\"\(state)\",\"identityId\":\"i\"" + (renewal.map { ",\"renewal\":{\"state\":\"\($0)\"}" } ?? "") + "}").utf8)
+        Data(("{\"state\":\"\(state)\",\"connectionId\":\"c\",\"connectionGeneration\":1,\"teamId\":\"TEAM123456\",\"identityId\":\"i\",\"revision\":1,\"certificateSha256\":\"digest\",\"expiresAt\":9999999999999" + (renewal.map { ",\"renewal\":{\"identityId\":\"replacement\",\"state\":\"\($0)\"}" } ?? "") + "}").utf8)
     }
     func testReconciliationAutomaticallyCachesBundleAndNeverUsesRetry() async throws {
         let transport = DelayedTransport(), vault = MemoryVault(), client = try client(transport, vault)
@@ -37,17 +37,26 @@ import XCTest
         let request = await transport.request("ensure")
         XCTAssertEqual(try JSONSerialization.jsonObject(with: request!.httpBody!) as? [String: Bool], [:])
     }
-    func testLogoutAndServerSwitchRejectLateReconciliationAndBundle() async throws {
-        for (path, serverSwitch) in [("identity", false), ("bundle", false), ("identity", true), ("bundle", true)] {
-            let transport = DelayedTransport(), vault = MemoryVault(), client = try client(transport, vault)
-            let sync = coordinator(client); let work = Task { try await sync.reconcile() }
-            await transport.wait("ensure"); await transport.respond("ensure", response(path == "identity" ? "reconciling" : "ready"))
-            await transport.wait(path)
-            if serverSwitch { try client.changeServer(URL(string: "https://other.test")!) } else { try client.clear() }
-            sync.cancel()
-            await transport.respond(path, path == "identity" ? response("ready") : Data("old".utf8))
-            do { _ = try await work.value; XCTFail("Late result accepted") } catch {}
-            XCTAssertTrue(vault.values.isEmpty)
+    func testOwnerReplacementAndResetRejectLateReconciliationAndBundle() async throws {
+        for path in ["identity", "bundle"] {
+            for operation in ["replace", "reset", "clear"] {
+                let transport = DelayedTransport(), vault = MemoryVault(), client = try client(transport, vault)
+                let sync = coordinator(client); let work = Task { try await sync.reconcile() }
+                await transport.wait("ensure"); await transport.respond("ensure", response(path == "identity" ? "reconciling" : "ready"))
+                await transport.wait(path)
+                switch operation {
+                case "replace":
+                    var owner = client.owner!; owner.ownerId = "replacement"
+                    try client.install(tokens: .init(accessToken: "new", refreshToken: "new", tokenType: "Bearer", expiresAt: 9999999999999, refreshExpiresAt: 9999999999999, sessionId: "s"), owner: owner)
+                case "reset": try client.invalidateSigning()
+                default: try client.clear()
+                }
+                sync.cancel()
+                await transport.respond(path, path == "identity" ? response("ready") : Data("old".utf8))
+                do { _ = try await work.value; XCTFail("Late result accepted") } catch {}
+                XCTAssertNil(try client.cached("bundle"))
+                XCTAssertEqual(client.owner?.ownerId, operation == "replace" ? "replacement" : operation == "reset" ? "owner" : nil)
+            }
         }
     }
     func testTerminalStatesStopWithoutFetchingBundle() async throws {

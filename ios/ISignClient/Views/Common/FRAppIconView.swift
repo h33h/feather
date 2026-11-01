@@ -29,10 +29,6 @@ final class FRIconCache {
 	func insert(_ image: UIImage, for url: URL, appearance: FRIconAppearance, tint: String, isTinted: Bool, dynamic: Bool) {
 		cache.setObject(image, forKey: key(url: url, appearance: appearance, tint: tint, isTinted: isTinted, dynamic: dynamic))
 	}
-
-	func invalidateAll() {
-		cache.removeAllObjects()
-	}
 }
 
 @MainActor

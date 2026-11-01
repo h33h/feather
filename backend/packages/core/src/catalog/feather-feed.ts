@@ -58,71 +58,40 @@ export class FeatherCatalog {
       const source = result.rows[0];
       if (!source) throw new Failure('NOT_FOUND', 404);
       if (source.state !== 'ready') throw new Failure('SOURCE_DISABLED', 409);
-      if (source.last_error === 'GBOX_EXPORT_CHANGED')
-        throw new Failure('SOURCE_REVIEW_REQUIRED', 409);
       const rows = (
         await tx.query<StoredRelease>(
           'SELECT id,snapshot,metadata FROM releases WHERE source_id=$1 AND owner_id=$2 ORDER BY id',
           [sourceId, ownerId],
         )
       ).rows;
-      const snapshot = source.feed?.snapshot ?? rows[0]?.snapshot;
-      if (!snapshot || !rows.length) throw new Failure('SOURCE_METADATA_ONLY', 409);
+      const snapshot = source.feed?.snapshot;
+      if (!snapshot || !rows.length || !source.feed?.repository)
+        throw new Failure('SOURCE_METADATA_ONLY', 409);
       if (rows.some((row) => row.snapshot !== snapshot))
         throw new Failure('RELEASE_UNAVAILABLE', 409);
       const marker = (id: string) =>
         `isign-feather://download/${encodeURIComponent(sourceId)}/${encodeURIComponent(id)}?snapshot=${encodeURIComponent(snapshot)}`;
-      let repository: FeatherRepository;
-      if (source.feed?.repository) {
-        repository = structuredClone(source.feed.repository);
-        repository.name ??= source.name;
-        repository.identifier ??= source.id;
-        // Replace every raw package URL, including top-level and historical
-        // entries. Media URLs remain public and receive no native headers.
-        for (const app of repository.apps) {
-          delete app.downloadURL;
-          for (const version of app.versions ?? []) delete version.downloadURL;
+      const repository = structuredClone(source.feed.repository);
+      repository.name ??= source.name;
+      repository.identifier ??= source.id;
+      // Replace every raw package URL, including top-level and historical
+      // entries. Media URLs remain public and receive no native headers.
+      for (const app of repository.apps) {
+        delete app.downloadURL;
+        for (const version of app.versions ?? []) delete version.downloadURL;
+      }
+      for (const row of rows) {
+        const mapping = row.metadata.feather;
+        if (!mapping) throw new Failure('RELEASE_UNAVAILABLE', 409);
+        const app = repository.apps[mapping.appIndex];
+        if (!app) throw new Failure('RELEASE_UNAVAILABLE', 409);
+        if (!row.metadata.url) continue;
+        if (mapping.topLevel) app.downloadURL = marker(row.id);
+        for (const index of mapping.versionIndices) {
+          const version = app.versions?.[index];
+          if (!version) throw new Failure('RELEASE_UNAVAILABLE', 409);
+          version.downloadURL = marker(row.id);
         }
-        for (const row of rows) {
-          const mapping = row.metadata.feather;
-          if (!mapping) throw new Failure('RELEASE_UNAVAILABLE', 409);
-          const app = repository.apps[mapping.appIndex];
-          if (!app) throw new Failure('RELEASE_UNAVAILABLE', 409);
-          if (!row.metadata.url) continue;
-          if (mapping.topLevel) app.downloadURL = marker(row.id);
-          for (const index of mapping.versionIndices) {
-            const version = app.versions?.[index];
-            if (!version) throw new Failure('RELEASE_UNAVAILABLE', 409);
-            version.downloadURL = marker(row.id);
-          }
-        }
-      } else {
-        // Existing pre-feature snapshots need no migration or refresh.
-        repository = {
-          identifier: source.id,
-          name: source.name,
-          apps: rows.map((row) => {
-            const release = row.metadata;
-            const version = release.version ?? release.displayVersion;
-            return {
-              bundleIdentifier: release.bundleId ?? release.upstreamId,
-              name: release.name,
-              version,
-              localizedDescription: release.description,
-              iconURL: release.iconUrl,
-              ...(release.url ? { downloadURL: marker(row.id) } : {}),
-              versions: version
-                ? [
-                    {
-                      version,
-                      ...(release.build ? { buildVersion: release.build } : {}),
-                      ...(release.url ? { downloadURL: marker(row.id) } : {}),
-                    },
-                  ]
-                : undefined,
-            };
-          }),
-        };
       }
       return featherFeedSchema.parse({ sourceId, snapshot, repository });
     });

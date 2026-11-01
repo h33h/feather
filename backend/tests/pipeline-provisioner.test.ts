@@ -10,9 +10,8 @@ import { createHash, X509Certificate } from 'node:crypto';
 import { createDatabase } from './helpers/database';
 import { ProductionProvisioner } from '../packages/core/src/signing/provisioner';
 import { AppleProvisioningApi } from '../packages/core/src/apple/provisioning-client';
-import { BOOTSTRAP_SCHEMA } from '../packages/core/src/apple/bootstrap-store';
 import { hash } from '../packages/core/src/shared/index';
-import type { ExecutorGrant } from '../packages/core/src/signing/publisher';
+import type { ExecutorGrant } from '../packages/core/src/shared/runner-contracts';
 for (const mode of [
   'ready',
   'unknown-os',
@@ -61,7 +60,6 @@ for (const mode of [
       db = await createDatabase();
     let now = Date.parse(cert.validFrom) + 1000;
     try {
-      await db.query(BOOTSTRAP_SCHEMA);
       await db.query("INSERT INTO users(id,login_name,created_at) VALUES('o','fixture@b.c',0)");
       await db.query(
         "INSERT INTO connections(id,owner_id,team_id,state,provider) VALUES('c','o','ABCDEFGHIJ','ready','asc')",
@@ -128,9 +126,8 @@ for (const mode of [
       );
       const grant: ExecutorGrant = {
         ownerId: principal,
-        ...(shareId
-          ? { connectionOwnerId: 'o', accessGrantId: shareId, accessGrantGeneration: 1 }
-          : {}),
+        connectionOwnerId: 'o',
+        ...(shareId ? { accessGrantId: shareId, accessGrantGeneration: 1 } : {}),
         jobId: 'j',
         leaseToken: 'lease',
         connectionId: 'c',

@@ -5,7 +5,7 @@ import { it, expect } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { createDatabase } from './helpers/database';
 import { token } from '../packages/core/src/shared/index';
-import { Service } from '../packages/core/src/application/service';
+import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
 import { RunnerAuthorization } from '../packages/core/src/signing/runner-authorization';
 import { canonicalReport } from '../packages/core/src/shared/canonical-json';
 
@@ -38,10 +38,7 @@ it('keeps signed authorization within the runner TTL when the clock advances bet
 it('authorizes only current jobs and permits cleanup after cancellation without reopening private data', async () => {
   const db = await createDatabase();
   try {
-    let code = '';
-    const s = new Service(db, {
-      now: () => 10000,
-    });
+    const s = new JobLifecycle(db, () => 10000);
     const owner = (await loginFixture(s.db, 'worker@example.invalid', s.now)).ownerId;
     const c = await connectionFixture(s.db, owner, 'TEAM-WORKER');
     const d = await deviceFixture(s.db, owner, c.id, 'Fixture', '18.0');

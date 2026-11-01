@@ -1,12 +1,8 @@
 import { it, expect } from 'vitest';
 import { createDatabase } from './helpers/database';
-import {
-  DatabaseBootstrapPort,
-  BOOTSTRAP_SCHEMA,
-} from '../packages/core/src/apple/bootstrap-store';
+import { DatabaseBootstrapPort } from '../packages/core/src/apple/bootstrap-store';
 it('fences bootstrap leases and requires ciphertext before certificate claim', async () => {
   const db = await createDatabase();
-  await db.query(BOOTSTRAP_SCHEMA);
   await db.query("INSERT INTO users(id,login_name,created_at) VALUES('o','a@b.c',0)");
   await db.query(
     "INSERT INTO connections(id,owner_id,team_id,state,provider) VALUES('c','o','pending:c','validating','asc')",
@@ -34,7 +30,6 @@ it('fences bootstrap leases and requires ciphertext before certificate claim', a
 it('persists one identity and refuses duplicate uncertain certificate POST', async () => {
   const db = await createDatabase();
   try {
-    await db.query(BOOTSTRAP_SCHEMA);
     await db.query("INSERT INTO users(id,login_name,created_at) VALUES('o','c@b.c',0)");
     await db.query(
       "INSERT INTO connections(id,owner_id,team_id,state,provider) VALUES('c','o','pending:c','validating','asc')",

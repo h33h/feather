@@ -15,7 +15,7 @@ function fixture(available = true) {
   const useCase = new ReceiveUpload(
     { query } as unknown as QueryDatabase,
     { upload },
-    { completeSource, queue: { failReceiving } },
+    { completeSource, failReceiving },
   );
   return { useCase, query, upload, completeSource, failReceiving };
 }

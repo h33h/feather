@@ -1,18 +1,17 @@
+import { SessionService } from '../packages/core/src/auth/sessions';
+import { ConnectionLifecycle } from '../packages/core/src/apple/connection-lifecycle';
 import { loginFixture, connectionFixture, deviceFixture } from './helpers/login';
 import { it, expect } from 'vitest';
 import { createDatabase } from './helpers/database';
-import { Service } from '../packages/core/src/application/service';
+import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
 import { Publisher } from '../packages/core/src/signing/publisher';
 import { Vault } from '../packages/core/src/apple/vault';
 import { Provisioning, MutationUncertain } from '../packages/core/src/apple/provisioning';
 it('persists private-key reference before certificate POST and reconciles uncertainty without retry', async () => {
   const db = await createDatabase();
   try {
-    let code = '';
     const now = () => 10000,
-      s = new Service(db, {
-        now,
-      });
+      s = new JobLifecycle(db, now);
     const login = await loginFixture(s.db, 'provision@example.invalid', s.now),
       owner = login.ownerId;
     const c = await connectionFixture(s.db, owner, 'TEAM-PROVISION'),
@@ -32,7 +31,7 @@ it('persists private-key reference before certificate POST and reconciles uncert
         { verify: async () => false },
         now,
       ),
-      grant = await publisher.grant(owner, job.id, 'lease', 'vm-synthetic');
+      grant = await publisher.grant(owner, job.id, 'lease', 'vm-synthetic', undefined, 999999999);
     let calls = 0,
       visible = false;
     const p = new Provisioning(
@@ -81,7 +80,11 @@ it('persists private-key reference before certificate POST and reconciles uncert
       reconciled: true,
     });
     expect(calls).toBe(1);
-    await s.disconnect(login.token, login.csrf, 'http://localhost:3000', 'http://localhost:3000');
+    await new ConnectionLifecycle(
+      s.db,
+      () => s.now,
+      new SessionService(s.db, { now: () => s.now }),
+    ).disconnect(login.token, login.csrf, 'http://localhost:3000', 'http://localhost:3000');
     await expect(p.ensure(grant, 'bundle', { identifier: 'test.fixture' })).rejects.toThrow(
       'STALE_EXECUTOR_LEASE',
     );

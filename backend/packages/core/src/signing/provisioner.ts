@@ -1,3 +1,4 @@
+import type { JobMaterialEnvelope } from '../shared/signing-contracts';
 import { assertJobAccess } from '../apple/access-lifecycle';
 import { createHash, X509Certificate } from 'node:crypto';
 import type { Database } from '../shared/database';
@@ -12,18 +13,7 @@ import { Provisioning } from '../apple/provisioning';
 import { ProfileRenewal } from '../apple/profile-renewal';
 import type { PipelineProvisioner } from './pipeline';
 import { createExecutorTask } from './executor-task';
-export type JobMaterialEnvelope = {
-  owner: string;
-  connection: string;
-  purpose: 'distribution-key';
-  secret: string;
-  aad: string;
-  wrappedKey: string;
-  nonce: string;
-  ciphertext: string;
-  tag: string;
-  generation: number;
-};
+
 export interface MaterialVault {
   prepareJobMaterial(
     grant: ExecutorGrant,
@@ -155,7 +145,7 @@ export class ProductionProvisioner {
       certificate: Certificate;
     }>(
       "SELECT identity,certificate FROM bootstrap_operations WHERE owner_id=$1 AND connection_id=$2 AND generation=$3 AND certificate_state='committed'",
-      [g.connectionOwnerId ?? g.ownerId, g.connectionId, g.connectionGeneration],
+      [g.connectionOwnerId, g.connectionId, g.connectionGeneration],
     );
     const bootstrap = record.rows[0];
     if (!bootstrap?.identity?.secretRef || !bootstrap.certificate?.pem)
@@ -398,7 +388,7 @@ export class ProductionProvisioner {
     });
     const identityId = hash(
       canonicalReport({
-        owner: g.connectionOwnerId ?? g.ownerId,
+        owner: g.connectionOwnerId,
         connection: g.connectionId,
         generation: g.connectionGeneration,
         spki,
@@ -424,7 +414,7 @@ export class ProductionProvisioner {
         'INSERT INTO identities(id,owner_id,connection_id,secret_ref,certificate_digest,expires_at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO UPDATE SET expires_at=$6',
         [
           identityId,
-          g.connectionOwnerId ?? g.ownerId,
+          g.connectionOwnerId,
           g.connectionId,
           bootstrap.identity.secretRef,
           certificateDigest,
@@ -440,7 +430,7 @@ export class ProductionProvisioner {
           'INSERT INTO profiles(id,owner_id,connection_id,identity_id,bundle_id,expires_at,metadata) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO UPDATE SET expires_at=$6,metadata=$7',
           [
             profileId,
-            g.connectionOwnerId ?? g.ownerId,
+            g.connectionOwnerId,
             g.connectionId,
             identityId,
             p.bundleId,

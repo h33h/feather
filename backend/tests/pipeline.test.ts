@@ -1,10 +1,12 @@
+import { createHash } from 'node:crypto';
 import { ownAuthority } from './helpers/seed-authority';
 import { bindOwnFixture } from './helpers/login';
 import { it, expect, vi } from 'vitest';
 import { createDatabase } from './helpers/database';
 import { hash, Failure } from '../packages/core/src/shared/index';
-import { Service } from '../packages/core/src/application/service';
-import { Publisher, digest, type VerifiedReport } from '../packages/core/src/signing/publisher';
+import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
+import { Publisher } from '../packages/core/src/signing/publisher';
+import type { VerifiedReport } from '../packages/core/src/shared/runner-contracts';
 import { MappingService } from '../packages/core/src/signing/mapping';
 import { PipelineCoordinator, type AnalysisVm } from '../packages/core/src/signing/pipeline';
 import { Readable } from 'node:stream';
@@ -50,7 +52,7 @@ for (const mode of [
       await db.query("UPDATE devices SET udid=$1,connection_generation=1 WHERE id='d'", [
         'a'.repeat(40),
       ]);
-      const service = new Service(db, { now: () => clock });
+      const service = new JobLifecycle(db, () => clock);
       if (
         mode === 'unknown-os' ||
         mode === 'unknown-os-wrong-binding' ||
@@ -83,7 +85,7 @@ for (const mode of [
                 ])
               ).rows[0].state,
             ).toBe('verifying');
-            return { digest: digest(bytes), size: bytes.length };
+            return { digest: createHash('sha256').update(bytes).digest('hex'), size: bytes.length };
           },
           delete: async () => {},
         },
@@ -173,7 +175,7 @@ for (const mode of [
           return {
             report: {
               ...grant,
-              artifactDigest: digest(bytes),
+              artifactDigest: createHash('sha256').update(bytes).digest('hex'),
               bundleId: 'test.fixture',
               version: '1.0',
               title: 'Fixture',
@@ -208,6 +210,7 @@ for (const mode of [
             return vm;
           },
           verifyInstance: async () => true,
+          retireLaunch: async () => {},
         },
         attestor: { verify: async () => true },
         storage: {

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { assertAppleAccess, lockPrincipalConnections, type AppleAccess } from '../apple/access';
 import type { Database, QueryDatabase } from '../shared/database';
-import { denyCms, normalizeUdid, type CmsVerifier, type DeviceOnboarding } from './onboarding';
+import { normalizeUdid, type CmsVerifier, type DeviceOnboarding } from './onboarding';
 import { Failure, hash, id, token } from '../shared/index';
 export type CollectedDeviceStatus =
   | 'collected'
@@ -72,8 +72,8 @@ export class DeviceCollection {
     private db: Database,
     private onboarding: DeviceOnboarding,
     private now: () => number,
-    private verify: CmsVerifier = denyCms,
-    private nativeSession?: NativeCollectionSession,
+    private verify: CmsVerifier,
+    private nativeSession: NativeCollectionSession,
   ) {}
   private async owner(db: QueryDatabase, owner: string) {
     if (
@@ -90,12 +90,11 @@ export class DeviceCollection {
     return this.createChallenge(owner, hash(sessionToken));
   }
   async challengeNative(owner: string, sessionId: string) {
-    if (!this.nativeSession) throw new Failure('NATIVE_API_UNAVAILABLE', 503);
     return this.createChallenge(owner, 'native:' + sessionId);
   }
   private async liveSession(tx: QueryDatabase, owner: string, binding: string) {
     if (binding.startsWith('native:'))
-      return !!this.nativeSession && this.nativeSession(tx, owner, binding.slice(7), this.now());
+      return this.nativeSession(tx, owner, binding.slice(7), this.now());
     return !!(
       await tx.query(
         'SELECT token_hash FROM sessions WHERE owner_id=$1 AND token_hash=$2 AND expires_at>$3 FOR UPDATE',
@@ -497,14 +496,5 @@ export class DeviceCollection {
       ],
     );
     if (!updated.rows.length) throw new Failure('CONNECTION_CHANGED', 409);
-  }
-  async hasChallenge(capability: string) {
-    return (
-      (
-        await this.db.query('SELECT id FROM device_collection_challenges WHERE token_hash=$1', [
-          hash(capability),
-        ])
-      ).rows.length > 0
-    );
   }
 }

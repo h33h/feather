@@ -1,10 +1,12 @@
+import { nativeCollectionSession as validateNativeCollectionSession } from '../packages/core/src/application/native-device-session';
+import { denyCms as denyCollectionCms } from '../packages/core/src/devices/onboarding';
 import { ownAuthority } from './helpers/seed-authority';
 import { afterEach, expect, it } from 'vitest';
 import { createDatabase, type Database } from './helpers/database';
 import { DeviceOnboarding, type DeviceResource } from '../packages/core/src/devices/onboarding';
 import { DeviceCollection } from '../packages/core/src/devices/collection';
 import { hash, Failure } from '../packages/core/src/shared/index';
-import { Service } from '../packages/core/src/application/service';
+import { DeviceActions } from '../packages/core/src/devices/actions';
 
 const databases: Database[] = [];
 afterEach(async () => {
@@ -50,6 +52,7 @@ async function fixture() {
       issuerTrusted: true,
       deviceCertificate: true,
     }),
+    validateNativeCollectionSession,
   );
   return {
     db,
@@ -190,6 +193,7 @@ it('rejects expired and mismatched callbacks and untrusted CMS', async () => {
       issuerTrusted: false,
       deviceCertificate: true,
     }),
+    validateNativeCollectionSession,
   );
   await expect(deny.callback(current.challenge, Buffer.from('plist'))).rejects.toThrow(
     'INVALID_DEVICE_CALLBACK',
@@ -271,7 +275,13 @@ it('uses persistent leases to prevent two instances polling the same device', as
   });
   const first = f.service.reconcileOwner('owner');
   await beginning;
-  const second = new DeviceCollection(f.db, f.onboarding, () => f.now);
+  const second = new DeviceCollection(
+    f.db,
+    f.onboarding,
+    () => f.now,
+    denyCollectionCms,
+    validateNativeCollectionSession,
+  );
   await second.reconcileOwner('owner');
   release();
   await first;
@@ -428,7 +438,7 @@ it('restores a removed iPhone only after a fresh verified owner enrollment callb
   await ownAuthority(f.db);
   await f.service.reconcileOwner('owner');
   const bound = (await f.service.list('owner'))[0].bindings[0];
-  await new Service(f.db, { now: () => f.now }).removeDevice('owner', bound.deviceId);
+  await new DeviceActions(f.db, () => f.now).removeDevice('owner', bound.deviceId);
   f.advance(300001);
   await ownAuthority(f.db);
   await f.service.reconcileOwner('owner');
@@ -521,7 +531,13 @@ it('rolls back Apple binding checks if seeding fails', async () => {
         }),
       ),
   };
-  const service = new DeviceCollection(recording, f.onboarding, () => f.now);
+  const service = new DeviceCollection(
+    recording,
+    f.onboarding,
+    () => f.now,
+    denyCollectionCms,
+    validateNativeCollectionSession,
+  );
   await expect(service.reconcileOwner('owner')).rejects.toThrow('Seeding interrupted');
   expect((await f.db.query('SELECT id FROM collected_devices')).rows).toHaveLength(1);
   expect((await f.db.query('SELECT id FROM device_collection_checks')).rows).toEqual([]);

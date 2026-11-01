@@ -34,7 +34,9 @@ def decode_job_key(sealed, grant, *, aesgcm_factory=None):
     }
     if (
         set(envelope) != fields
-        or envelope["owner"] != grant.get("connectionOwnerId", grant["ownerId"])
+        or not isinstance(grant.get("connectionOwnerId"), str)
+        or not grant["connectionOwnerId"]
+        or envelope["owner"] != grant["connectionOwnerId"]
         or envelope["connection"] != grant["connectionId"]
         or envelope["generation"] != grant["connectionGeneration"]
         or envelope["purpose"] != "distribution-key"
@@ -44,7 +46,7 @@ def decode_job_key(sealed, grant, *, aesgcm_factory=None):
         reject("SEALED_JOB_KEY_BINDING_MISMATCH")
     aad = json.dumps(
         {
-            "owner": grant.get("connectionOwnerId", grant["ownerId"]),
+            "owner": grant["connectionOwnerId"],
             "connection": grant["connectionId"],
             "purpose": "distribution-key",
             "secret": envelope["secret"],

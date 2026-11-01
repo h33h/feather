@@ -275,21 +275,6 @@ test('malformed browser recovery state does not prevent installation', async ({ 
   ).toBeEnabled();
 });
 
-test('retired web app clears only its own offline caches and advertises no web app install', async ({
-  page,
-}) => {
-  await mockInstaller(page);
-  await page.goto('/');
-  await page.evaluate(async () => {
-    await caches.open('isign-offline-v4');
-    await caches.open('another-app-cache');
-  });
-  await page.reload();
-  await expect.poll(() => page.evaluate(() => caches.keys())).toEqual(['another-app-cache']);
-  await expect(page.locator('link[rel="manifest"]')).toHaveCount(0);
-  await expect(page.locator('meta[name="apple-mobile-web-app-capable"]')).toHaveCount(0);
-});
-
 test('theme choice works in the installer and survives reload', async ({ page }) => {
   await mockInstaller(page);
   await page.goto('/');

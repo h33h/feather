@@ -1,6 +1,6 @@
 import { open } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { ProviderError } from './config';
+import { ProviderError } from '../shared/errors';
 export async function loadPrivateEnvironment(
   file: string,
   env: Record<string, string | undefined>,

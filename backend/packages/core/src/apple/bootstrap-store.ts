@@ -1,7 +1,6 @@
 import type { Database } from '../shared/database';
 import type { BootstrapPort, BootstrapLease, BootstrapIdentity } from './onboarding';
 import { Failure, token } from '../shared/index';
-export const BOOTSTRAP_SCHEMA = `CREATE TABLE IF NOT EXISTS bootstrap_operations(owner_id text NOT NULL,connection_id text NOT NULL,generation integer NOT NULL,nonce text NOT NULL,expires_at bigint NOT NULL,identity jsonb,certificate_state text NOT NULL DEFAULT 'prepared',certificate jsonb,PRIMARY KEY(owner_id,connection_id,generation),FOREIGN KEY(connection_id,owner_id) REFERENCES connections(id,owner_id));`;
 export type BootstrapCallbacks = {
   prepareIdentity: (lease: BootstrapLease) => Promise<BootstrapIdentity>;
   findCertificates: (

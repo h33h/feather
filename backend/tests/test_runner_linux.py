@@ -299,6 +299,9 @@ class LinuxSigningTests(unittest.TestCase):
                     "profileRequired": False,
                 }
             )
+        for component in components:
+            component["sourceBundleId"] = component["bundleId"]
+            component["sourceEntitlements"] = dict(component["entitlements"])
         resources = root / "Payload/App.app/Assets.bundle"
         resources.mkdir()
         (resources / "Info.plist").write_bytes(plistlib.dumps({"CFBundlePackageType": "BNDL"}))
@@ -345,6 +348,7 @@ class LinuxSigningTests(unittest.TestCase):
             "udid": "TEST-UDID",
         }
         grant = {
+            "connectionOwnerId": "o",
             "ownerId": "o",
             "jobId": "j",
             "leaseToken": "l",

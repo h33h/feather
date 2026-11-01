@@ -21,29 +21,25 @@ export async function initializeDatabase(db: Database): Promise<void> {
 }
 
 /** Check the current schema before reading private files or performing cleanup. */
-export async function assertInitializedDatabase(
-  db: QueryDatabase,
-  options: { native?: boolean } = {},
-): Promise<void> {
-  const schema = (
-    await db.query<{ ready: boolean }>(`SELECT
-    (SELECT count(*)=3 FROM information_schema.columns WHERE table_schema='public' AND table_name='users' AND column_name IN('role','blocked_at','login_name'))
-    AND (SELECT count(*)=2 FROM information_schema.columns WHERE table_schema='public' AND table_name='user_apple_bindings' AND column_name IN('connection_owner_id','grant_id'))
-    AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='artifacts' AND column_name='ready_at') AS ready`)
-  ).rows[0];
-  if (options.native) {
-    const native = (
-      await db.query<{ ready: boolean }>(`SELECT
-      (SELECT count(*)=11 FROM information_schema.columns WHERE table_schema='public' AND table_name='feather_signing_identities' AND column_name IN('id','owner_id','connection_id','generation','revision','state','secret_ref','spki_sha256','lease_token','lease_until','replacement_for'))
-      AND (SELECT count(*)=8 FROM information_schema.columns WHERE table_schema='public' AND table_name='feather_profile_operations' AND column_name IN('id','owner_id','identity_id','binding','request','state','resources','result'))
-      AND (SELECT count(*)=7 FROM information_schema.columns WHERE table_schema='public' AND table_name='native_sessions' AND column_name IN('id','owner_id','access_hash','verified_at','expires_at','refresh_expires_at','revoked_at'))
-      AND (SELECT count(*)=4 FROM information_schema.columns WHERE table_schema='public' AND table_name='native_refresh_tokens' AND column_name IN('token_hash','session_id','expires_at','used_at'))
-      AND (SELECT count(*)=12 FROM information_schema.columns WHERE table_schema='public' AND table_name='native_auth_transactions' AND column_name IN('id_hash','state','code_challenge','redirect_uri','owner_id','session_id','created_at','expires_at','code_hash','code_expires_at','verified_at','consumed_at')) AS ready`)
-    ).rows[0];
-    if (!native?.ready) throw new Failure('DATABASE_UNINITIALIZED', 503);
-  }
+export async function assertInitializedDatabase(db: QueryDatabase): Promise<void> {
+  const schema = await readFile(new URL('../../../db/schema.sql', import.meta.url), 'utf8');
+  const required = [...schema.matchAll(/^CREATE TABLE ([a-z_]+) \(\n([\s\S]*?)^\);/gm)].flatMap(
+    ([, table, body]) =>
+      [...body.matchAll(/^  ([a-z_]+) [a-z]/gm)].map(([, column]) => `${table}.${column}`),
+  );
+  const columns = await db.query<{ name: string }>(
+    "SELECT table_name||'.'||column_name AS name FROM information_schema.columns WHERE table_schema='public'",
+  );
+  const present = new Set(columns.rows.map((row) => row.name));
+  if (!required.length || required.some((column) => !present.has(column)))
+    throw new Failure('DATABASE_UNINITIALIZED', 503);
+  const views = [...schema.matchAll(/^CREATE VIEW ([a-z_]+) AS/gm)].map(([, name]) => name);
+  const currentViews = await db.query<{ table_name: string }>(
+    "SELECT table_name FROM information_schema.views WHERE table_schema='public'",
+  );
+  const presentViews = new Set(currentViews.rows.map((row) => row.table_name));
   if (
-    !schema?.ready ||
+    views.some((view) => !presentViews.has(view)) ||
     !(await db.query("SELECT id FROM users WHERE role='admin' AND deleted_at IS NULL LIMIT 1")).rows
       .length
   )

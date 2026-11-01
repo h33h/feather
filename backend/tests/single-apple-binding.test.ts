@@ -1,12 +1,30 @@
 import { expect, it } from 'vitest';
 import { createDatabase } from './helpers/database';
 import { AppleSharing, resolveAppleAccess } from '../packages/core/src/apple/access';
-import { resolveBinding } from '../packages/core/src/apple/bindings';
+import type { QueryDatabase } from '../packages/core/src/shared/database';
 import { DatabaseOnboardingPort } from '../packages/core/src/apple/onboarding';
 import type { Vault } from '../packages/core/src/apple/vault';
 import { ConnectionLifecycle } from '../packages/core/src/apple/connection-lifecycle';
 import { DeviceActions } from '../packages/core/src/devices/actions';
 import { AccountLifecycle } from '../packages/core/src/auth/account-lifecycle';
+
+async function binding(db: QueryDatabase, userId: string) {
+  return (
+    (
+      await db.query<{
+        userId: string;
+        connectionId: string;
+        connectionOwnerId: string;
+        connectionGeneration: number;
+        grantId: string | null;
+        grantGeneration: number | null;
+      }>(
+        'SELECT owner_id AS "userId",id AS "connectionId",connection_owner_id AS "connectionOwnerId",generation AS "connectionGeneration",access_grant_id AS "grantId",access_grant_generation AS "grantGeneration" FROM apple_connections WHERE owner_id=$1',
+        [userId],
+      )
+    ).rows[0] ?? null
+  );
+}
 
 async function fixture() {
   const db = await createDatabase();
@@ -30,7 +48,7 @@ async function fixture() {
 it('grants immediate access to the recipient’s single shared Apple binding', async () => {
   const { db, profile, sharing } = await fixture();
   const share = await sharing.share('owner', profile);
-  expect(await resolveBinding(db, 'recipient')).toEqual({
+  expect(await binding(db, 'recipient')).toEqual({
     userId: 'recipient',
     connectionId: 'c',
     connectionOwnerId: 'owner',
@@ -58,7 +76,7 @@ it('refuses to replace an occupied recipient connection', async () => {
     "INSERT INTO user_apple_bindings(user_id,connection_id,connection_owner_id) VALUES('recipient','own','recipient')",
   );
   await expect(sharing.share('owner', profile)).rejects.toThrow('APPLE_CONNECTION_EXISTS');
-  expect((await resolveBinding(db, 'recipient'))?.connectionId).toBe('own');
+  expect((await binding(db, 'recipient'))?.connectionId).toBe('own');
 });
 
 it('requires disconnecting shared access before adding a personal Apple key', async () => {
@@ -66,13 +84,13 @@ it('requires disconnecting shared access before adding a personal Apple key', as
   await sharing.share('owner', profile);
   const onboarding = new DatabaseOnboardingPort(db, {} as Vault, () => 1000);
   await expect(onboarding.begin('recipient')).rejects.toThrow('APPLE_CONNECTION_EXISTS');
-  expect((await resolveBinding(db, 'recipient'))?.connectionOwnerId).toBe('owner');
+  expect((await binding(db, 'recipient'))?.connectionOwnerId).toBe('owner');
 });
 it('creates an own binding for an empty profile with the user as actual connection owner', async () => {
   const { db } = await fixture();
   const onboarding = new DatabaseOnboardingPort(db, {} as Vault, () => 1000);
   const connection = await onboarding.begin('other');
-  expect(await resolveBinding(db, 'other')).toMatchObject({
+  expect(await binding(db, 'other')).toMatchObject({
     userId: 'other',
     connectionId: connection.id,
     connectionOwnerId: 'other',
@@ -84,9 +102,9 @@ it('revokes the binding immediately and uses a new revision when shared again', 
   const { db, profile, sharing } = await fixture();
   const first = await sharing.share('owner', profile);
   await sharing.revoke('owner', first.grantId);
-  expect(await resolveBinding(db, 'recipient')).toBeNull();
+  expect(await binding(db, 'recipient')).toBeNull();
   const second = await sharing.share('owner', profile);
-  expect((await resolveBinding(db, 'recipient'))?.grantGeneration).toBe(2);
+  expect((await binding(db, 'recipient'))?.grantGeneration).toBe(2);
   expect(second.grantId).toBe(first.grantId);
 });
 
@@ -94,7 +112,7 @@ it('denies a blocked owner or recipient rather than allocating shared access', a
   const { db, profile, sharing } = await fixture();
   await db.query("UPDATE users SET blocked_at=1 WHERE id='recipient'");
   await expect(sharing.share('owner', profile)).rejects.toThrow('PROFILE_NOT_FOUND');
-  expect(await resolveBinding(db, 'recipient')).toBeNull();
+  expect(await binding(db, 'recipient')).toBeNull();
   await db.query("UPDATE users SET blocked_at=NULL WHERE id='recipient'");
   await db.query("UPDATE users SET blocked_at=1 WHERE id='owner'");
   await expect(sharing.share('owner', profile)).rejects.toThrow('CONNECTION_UNAVAILABLE');
@@ -107,8 +125,8 @@ it('lets a recipient disconnect shared access without deleting the owner connect
     fresh: async () => ({ ownerId: 'recipient' }),
   });
   await lifecycle.disconnect('', '', '', '');
-  expect(await resolveBinding(db, 'recipient')).toBeNull();
-  expect((await resolveBinding(db, 'owner'))?.connectionId).toBe('c');
+  expect(await binding(db, 'recipient')).toBeNull();
+  expect((await binding(db, 'owner'))?.connectionId).toBe('c');
   expect((await db.query("SELECT state FROM connections WHERE id='c'")).rows).toEqual([
     { state: 'ready' },
   ]);
@@ -152,7 +170,7 @@ it('local device removal cancels its work without disconnecting the Apple team',
   expect((await db.query('SELECT status FROM devices')).rows).toEqual([
     { status: 'locally_removed' },
   ]);
-  expect((await resolveBinding(db, 'recipient'))?.connectionId).toBe('c');
+  expect((await binding(db, 'recipient'))?.connectionId).toBe('c');
 });
 
 it('deleting the owner closes recipient access and cancels dependent work', async () => {
@@ -161,8 +179,8 @@ it('deleting the owner closes recipient access and cancels dependent work', asyn
     fresh: async () => ({ ownerId: 'owner' }),
   });
   await accounts.deleteAccount('', '', '', '');
-  expect(await resolveBinding(db, 'owner')).toBeNull();
-  expect(await resolveBinding(db, 'recipient')).toBeNull();
+  expect(await binding(db, 'owner')).toBeNull();
+  expect(await binding(db, 'recipient')).toBeNull();
   expect((await db.query('SELECT state,reason,finished_at FROM jobs')).rows).toEqual([
     { state: 'cancelled', reason: 'ACCOUNT_DELETED', finished_at: 3000 },
   ]);

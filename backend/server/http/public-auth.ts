@@ -60,7 +60,7 @@ export async function handlePublicAuth(context: PublicContext) {
           raw,
         ),
       );
-    const authenticated = await app.service.authorizeWrite(
+    const authenticated = await app.sessions.authorizeWrite(
       raw,
       csrf,
       request.headers.get('origin') ?? '',
@@ -80,7 +80,7 @@ export async function handlePublicAuth(context: PublicContext) {
         ),
       );
     if (target === 'auth/passkey/add-options') {
-      await app.service.fresh(raw, csrf, request.headers.get('origin') ?? '', origin);
+      await app.sessions.fresh(raw, csrf, request.headers.get('origin') ?? '', origin);
       return response(await app.auth.addOptions(authenticated.ownerId, raw));
     }
     throw new Failure('NOT_FOUND', 404);

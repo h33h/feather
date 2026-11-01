@@ -276,6 +276,7 @@ it('carries a real HTTP analyzer rejection through the provider as a public fail
     const vm = await provider.launch({
       ownerId: 'o',
       jobId: 'j',
+      launchNonce: 'n'.repeat(43),
       maxRuntimeMs: 60000,
       maxInputBytes: 1024,
       maxUnpackedBytes: 2048,
@@ -284,6 +285,7 @@ it('carries a real HTTP analyzer rejection through the provider as a public fail
     });
     const grant = {
       ownerId: 'o',
+      connectionOwnerId: 'o',
       jobId: 'j',
       leaseToken: 'lease',
       connectionId: 'connection',

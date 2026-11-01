@@ -85,7 +85,7 @@ ALLOWED = {
 }
 
 
-def entitlements(data, allow_verified_der=False):
+def entitlements(data):
     if len(data) < 12:
         reject("SIGNATURE_BOUNDS")
     magic, size, count = struct.unpack_from(">III", data)
@@ -95,7 +95,7 @@ def entitlements(data, allow_verified_der=False):
     # Apple's readBlob reads its declared length and treats the allocation as a
     # maximum. Only indexed bytes within size can supply entitlement claims.
     # https://github.com/apple-oss-distributions/Security/blob/main/OSX/libsecurity_codesigning/lib/machorep.cpp#L327-L343
-    # Kept for verification callers; every DER blob is now parsed and checked.
+    # Every DER blob is parsed and checked.
     xml = None
     der = None
     seen = set()
@@ -200,7 +200,7 @@ def macho(data, depth=0, allow_verified_der=False, required_filetype=None, allow
             start, length = struct.unpack_from("<II", data, offset + 8)
             if start < end or start + length > len(data):
                 reject("SIGNATURE_BOUNDS")
-            ent = entitlements(data[start : start + length], allow_verified_der)
+            ent = entitlements(data[start : start + length])
             signature = True
         offset += size
     if offset != end or platform != 2:

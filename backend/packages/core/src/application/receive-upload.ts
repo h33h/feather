@@ -3,7 +3,7 @@ import type { UploadOptions, StoragePort } from '../library/storage-contract';
 import { Failure } from '../shared/errors';
 type ReceiveJobs = {
   completeSource(owner: string, job: string): Promise<unknown>;
-  queue: { failReceiving(owner: string, job: string, code: string): Promise<unknown> };
+  failReceiving(owner: string, job: string, code: string): Promise<unknown>;
 };
 /** Storage and queue retain their transaction/lease fences; this scenario owns their ordering. */
 export class ReceiveUpload {
@@ -36,7 +36,7 @@ export class ReceiveUpload {
       await this.jobs.completeSource(owner, source.id);
       return { upload, jobId: source.id };
     } catch (error) {
-      await this.jobs.queue.failReceiving(
+      await this.jobs.failReceiving(
         owner,
         source.id,
         error instanceof Failure ? error.code : 'UPLOAD_INTERRUPTED',

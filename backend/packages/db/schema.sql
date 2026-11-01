@@ -344,24 +344,6 @@ CREATE TABLE bootstrap_secret_grants (
   )
 );
 
-CREATE TABLE device_challenges (
-  id text NOT NULL,
-  owner_id text NOT NULL,
-  connection_id text NOT NULL,
-  generation integer NOT NULL,
-  token_hash text NOT NULL,
-  expires_at bigint NOT NULL,
-  consumed_at bigint,
-  session_hash text,
-  connection_owner_id text,
-  access_grant_id text,
-  access_grant_generation integer,
-  CONSTRAINT device_challenges_access_grant_id_fkey FOREIGN KEY (access_grant_id) REFERENCES apple_access_grants (id),
-  CONSTRAINT device_challenges_connection_principal_fkey FOREIGN KEY (connection_id, connection_owner_id) REFERENCES connections (id, owner_id),
-  CONSTRAINT device_challenges_pkey PRIMARY KEY (id),
-  CONSTRAINT device_challenges_token_hash_key UNIQUE (token_hash)
-);
-
 CREATE TABLE device_registration_operations (
   id text NOT NULL,
   connection_id text NOT NULL,

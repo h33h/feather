@@ -1,3 +1,4 @@
+import type { JobMaterialEnvelope } from '../shared/signing-contracts';
 import { assertAppleAccess, type AppleAccess } from './access';
 import type { ExecutorGrant } from '../shared/runner-contracts';
 import { canonicalReport } from '../shared/canonical-json';
@@ -38,18 +39,7 @@ type Secret = {
   tag: string;
   generation: number;
 };
-export type JobMaterialEnvelope = {
-  owner: string;
-  connection: string;
-  purpose: 'distribution-key';
-  secret: string;
-  aad: string;
-  wrappedKey: string;
-  nonce: string;
-  ciphertext: string;
-  tag: string;
-  generation: number;
-};
+
 type Encrypted = {
   id: string;
   wrapped: string;
@@ -65,7 +55,7 @@ const bootstrapFrom =
 const bootstrapWhere =
   "b.owner_id=$1 AND b.connection_id=$2 AND b.generation=$3 AND b.nonce=$4 AND b.expires_at=$5 AND b.expires_at>$6 AND c.generation=b.generation AND c.state IN('validating','action_required') AND c.provider='asc' AND u.deleted_at IS NULL AND u.blocked_at IS NULL";
 const jobSql =
-  "SELECT s.* FROM secrets s JOIN connections c ON c.id=s.connection_id AND c.owner_id=s.owner_id JOIN signing_jobs j ON j.connection_id=s.connection_id AND COALESCE(j.connection_owner_id,j.owner_id)=s.owner_id JOIN users u ON u.id=s.owner_id WHERE s.id=$1 AND j.owner_id=$2 AND j.id=$3 AND j.lease_token=$4 AND j.lease_expires>$5 AND j.state IN('analyzing','provisioning','signing','verifying') AND s.purpose<>'feather-signing-key' AND s.deleted_at IS NULL AND u.deleted_at IS NULL AND u.blocked_at IS NULL AND c.state='ready' AND c.generation=s.generation";
+  "SELECT s.* FROM secrets s JOIN connections c ON c.id=s.connection_id AND c.owner_id=s.owner_id JOIN signing_jobs j ON j.connection_id=s.connection_id AND j.connection_owner_id=s.owner_id JOIN users u ON u.id=s.owner_id WHERE s.id=$1 AND j.owner_id=$2 AND j.id=$3 AND j.lease_token=$4 AND j.lease_expires>$5 AND j.state IN('analyzing','provisioning','signing','verifying') AND s.purpose<>'feather-signing-key' AND s.deleted_at IS NULL AND u.deleted_at IS NULL AND u.blocked_at IS NULL AND c.state='ready' AND c.generation=s.generation";
 export class Vault {
   constructor(
     private db: Database,
@@ -412,7 +402,7 @@ export class Vault {
           task_binding: ExecutorGrant;
         }
       >(
-        "SELECT s.*,t.binding AS task_binding FROM secrets s JOIN connections c ON c.id=s.connection_id AND c.owner_id=s.owner_id JOIN users u ON u.id=s.owner_id JOIN signing_jobs j ON j.connection_id=s.connection_id AND COALESCE(j.connection_owner_id,j.owner_id)=s.owner_id JOIN uploads a ON a.id=j.upload_id AND a.owner_id=j.owner_id JOIN signing_devices d ON d.id=j.device_id AND d.owner_id=j.owner_id AND d.connection_id=c.id JOIN executor_tasks t ON t.job_id=j.id AND t.owner_id=j.owner_id WHERE s.id=$1 AND j.owner_id=$2 AND j.id=$3 AND c.id=$4 AND c.generation=$5 AND s.generation=$5 AND j.connection_id=$4 AND j.connection_generation=$5 AND d.connection_generation=$5 AND j.lease_token=$6 AND j.lease_expires>$7 AND j.state IN('analyzing','provisioning','signing','verifying') AND d.id=$8 AND d.status='ready' AND t.nonce=$9 AND t.consumed=false AND t.expires_at>$7 AND t.expires_at=$11 AND a.digest=$10 AND a.expires_at>$7 AND c.state='ready' AND c.provider='asc' AND u.deleted_at IS NULL AND u.blocked_at IS NULL AND s.deleted_at IS NULL AND s.purpose='distribution-key'",
+        "SELECT s.*,t.binding AS task_binding FROM secrets s JOIN connections c ON c.id=s.connection_id AND c.owner_id=s.owner_id JOIN users u ON u.id=s.owner_id JOIN signing_jobs j ON j.connection_id=s.connection_id AND j.connection_owner_id=s.owner_id JOIN uploads a ON a.id=j.upload_id AND a.owner_id=j.owner_id JOIN signing_devices d ON d.id=j.device_id AND d.owner_id=j.owner_id AND d.connection_id=c.id JOIN executor_tasks t ON t.job_id=j.id AND t.owner_id=j.owner_id WHERE s.id=$1 AND j.owner_id=$2 AND j.id=$3 AND c.id=$4 AND c.generation=$5 AND s.generation=$5 AND j.connection_id=$4 AND j.connection_generation=$5 AND d.connection_generation=$5 AND j.lease_token=$6 AND j.lease_expires>$7 AND j.state IN('analyzing','provisioning','signing','verifying') AND d.id=$8 AND d.status='ready' AND t.nonce=$9 AND t.consumed=false AND t.expires_at>$7 AND t.expires_at=$11 AND a.digest=$10 AND a.expires_at>$7 AND c.state='ready' AND c.provider='asc' AND u.deleted_at IS NULL AND u.blocked_at IS NULL AND s.deleted_at IS NULL AND s.purpose='distribution-key'",
         [
           secretId,
           binding.ownerId,
@@ -430,7 +420,7 @@ export class Vault {
       const row = result.rows[0];
       if (
         !row ||
-        row.owner_id !== (binding.connectionOwnerId ?? binding.ownerId) ||
+        row.owner_id !== binding.connectionOwnerId ||
         canonicalReport(row.task_binding) !== canonicalReport(binding)
       )
         throw this.unavailable();

@@ -174,10 +174,7 @@ it('retains encrypted staged P8 only for bootstrap-required proof', async () => 
       port,
       async () => {
         events.push('validate');
-        throw new (await import('../packages/core/src/application/service')).Failure(
-          'TEAM_PROOF_REQUIRED',
-          409,
-        );
+        throw new (await import('../packages/core/src/shared')).Failure('TEAM_PROOF_REQUIRED', 409);
       },
       () => 1,
     ).connect('o', input()),
@@ -188,7 +185,7 @@ it('retains encrypted staged P8 only for bootstrap-required proof', async () => 
     new AppleOnboarding(
       port,
       async () => {
-        throw new (await import('../packages/core/src/application/service')).Failure(
+        throw new (await import('../packages/core/src/shared')).Failure(
           'APPLE_ACCESS_ACTION_REQUIRED',
           403,
         );

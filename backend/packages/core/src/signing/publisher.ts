@@ -1,13 +1,11 @@
 import { artifactDeadline, scheduleTerminalCleanup } from '../library/object-lifecycle';
 import { assertJobAccess } from '../apple/access-lifecycle';
 import { lockAppleAccess, lockPrincipalConnections } from '../apple/access';
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Database, QueryDatabase } from '../shared/database';
 import { Failure, id, token } from '../shared/index';
 import type { ExecutorGrant, VerifiedReport } from '../shared/runner-contracts';
 import { canonicalReport } from '../shared/canonical-json';
-export type { ExecutorGrant, VerifiedReport } from '../shared/runner-contracts';
-export { canonicalReport } from '../shared/canonical-json';
 export interface ArtifactStore {
   retentionMs?: number;
   ready?: (key: string) => Promise<void>;
@@ -63,13 +61,10 @@ export class Publisher {
     jobId: string,
     leaseToken: string,
     isolationInstanceId: string,
-    planDigest?: string,
-    maxExpiresAt?: number,
+    planDigest: string | undefined,
+    maxExpiresAt: number,
   ): Promise<ExecutorGrant> {
-    if (
-      maxExpiresAt !== undefined &&
-      (!Number.isSafeInteger(maxExpiresAt) || maxExpiresAt <= this.now())
-    )
+    if (!Number.isSafeInteger(maxExpiresAt) || maxExpiresAt <= this.now())
       throw new Failure('EXECUTOR_INSTANCE_EXPIRED', 409);
     if (planDigest !== undefined && !/^[a-f0-9]{64}$/.test(planDigest))
       throw new Failure('PLAN_DIGEST_INVALID');
@@ -91,9 +86,9 @@ export class Publisher {
       if (!row) throw new Failure('STALE_EXECUTOR_LEASE', 409);
       const grant: ExecutorGrant = {
         ownerId,
+        connectionOwnerId: row.connection_owner_id,
         ...(row.connection_owner_id !== ownerId
           ? {
-              connectionOwnerId: row.connection_owner_id,
               accessGrantId: row.access_grant_id!,
               accessGrantGeneration: row.access_grant_generation!,
             }
@@ -106,7 +101,7 @@ export class Publisher {
         uploadDigest: row.digest,
         taskNonce: token(),
         isolationInstanceId,
-        expiresAt: Math.min(this.now() + 15 * 60000, maxExpiresAt ?? Number.MAX_SAFE_INTEGER),
+        expiresAt: Math.min(this.now() + 15 * 60000, maxExpiresAt),
         ...(planDigest ? { planDigest } : {}),
       };
       if (grant.expiresAt <= this.now()) throw new Failure('EXECUTOR_INSTANCE_EXPIRED', 409);
@@ -144,8 +139,6 @@ export class Publisher {
         await lockPrincipalConnections(tx, report.ownerId);
         await tx.query('SELECT id FROM connections WHERE id=$1 FOR UPDATE', [report.connectionId]);
         await this.store.confirmStored?.(tx, key, report.ownerId, stored.size);
-        if (report.connectionOwnerId)
-          await lockAppleAccess(tx, { ...report, generation: report.connectionGeneration });
         const task = await tx.query<{
           binding: ExecutorGrant;
         }>(
@@ -161,6 +154,7 @@ export class Publisher {
         for (const key of Object.keys(task.rows[0].binding) as (keyof ExecutorGrant)[])
           if (task.rows[0].binding[key] !== report[key])
             throw new Failure('EXECUTOR_BINDING_MISMATCH', 409);
+        await lockAppleAccess(tx, { ...report, generation: report.connectionGeneration });
         const r = await tx.query<Eligible>(active + ' FOR UPDATE OF o', [
           report.jobId,
           report.ownerId,
@@ -231,7 +225,4 @@ export class Publisher {
       if (!committed) await this.store.delete(key, report.ownerId);
     }
   }
-}
-export function digest(body: Uint8Array) {
-  return createHash('sha256').update(body).digest('hex');
 }

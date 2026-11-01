@@ -12,8 +12,6 @@ export const messages: Record<string, string> = {
 
   NATIVE_PIPELINE_REQUIRED: 'Сервис подписи временно недоступен. Повторите подготовку позже.',
   RELEASE_UNAVAILABLE: 'Версия клиента изменилась. Обновите данные и подготовьте клиент заново.',
-  SOURCE_REFRESH_BACKOFF: 'Следующее обновление уже запланировано.',
-  SOURCE_REFRESH_RUNNING: 'Каталог обновляется. Сохранённый список доступен.',
   QUOTA_EXCEEDED:
     'Недостаточно места. Дождитесь удаления файлов по сроку хранения или обратитесь к администратору.',
   UNAUTHENTICATED: 'Сессия завершилась. Войдите снова.',
@@ -45,15 +43,7 @@ export const messages: Record<string, string> = {
   TEAM_PROOF_REQUIRED:
     'В сведениях о команде запустите подготовку сертификата для проверки команды.',
   TEAM_UNAVAILABLE: 'Команда Apple недоступна. Проверьте права Team API Key в App Store Connect.',
-  GBOX_EXPORT_CHANGED:
-    'Формат каталога изменился. Сохранённый список доступен; запросите поддерживаемый экспорт у автора.',
   SOURCE_EXPIRED: 'Срок хранения исходной сборки истёк. Подготовьте клиент заново.',
-  SOURCE_TRUST_REQUIRED: 'Подтвердите доверие источнику перед добавлением.',
-  INVALID_SOURCE_URL: 'Укажите полную HTTPS-ссылку на каталог.',
-  UNSAFE_SOURCE_URL: 'Используйте публичный HTTPS-каталог.',
-  SHARE_CHANGED: 'Предложение доступа изменилось. Актуальный статус появится автоматически.',
-  SHARE_NOT_FOUND: 'Предложение больше недоступно. Попросите владельца команды отправить новое.',
-  PROFILE_NOT_FOUND: 'Профиль получателя не найден. Проверьте его ID.',
   AUTH_RATE_LIMITED: 'Слишком много попыток входа. Подождите и повторите.',
   PASSKEY_AUTH_FAILED: 'Вход не подтверждён. Повторите с passkey своего профиля.',
   MAPPING_CONSENT_REQUIRED: 'Подтвердите подготовку для выбранного iPhone.',
@@ -105,10 +95,6 @@ Object.assign(messages, {
     'Идентификатор клиента недоступен в Apple. Повторите подготовку; если ошибка остаётся, обратитесь к администратору сервера.',
   FRESH_AUTH_REQUIRED: 'Подтвердите действие с passkey своего профиля.',
 });
-
-messages.UNSUPPORTED_GBOX_SCHEMA =
-  'Формат источника не поддерживается. Используйте поддерживаемый каталог приложений.';
-messages.UNSUPPORTED_IAPPS_METADATA = messages.UNSUPPORTED_GBOX_SCHEMA;
 
 messages.RUNNER_BUSY = 'Сервис подписи занят. Повторите подготовку немного позже.';
 messages.RUNNER_TEMPORARY_UNAVAILABLE =

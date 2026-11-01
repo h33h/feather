@@ -1,20 +1,12 @@
-import { assertAppleAccess } from '../apple/access';
+import { assertAppleAccess, type AppleAccess } from '../apple/access';
 import { createHash, X509Certificate } from 'node:crypto';
 import type { Database } from '../shared/database';
 import { Failure, hash, id } from '../shared/index';
 import { normalizeUdid } from './onboarding';
 import { certificateTeamId } from '../apple/onboarding';
 import { ProfileRenewal } from '../apple/profile-renewal';
-export type EligibilityBinding = {
-  ownerId: string;
-  connectionId: string;
-  generation: number;
-  connectionOwnerId?: string;
-  accessGrantId?: string | null;
-  accessGrantGeneration?: number | null;
-};
 export type ControlProfileInput = {
-  binding: EligibilityBinding;
+  binding: AppleAccess;
   cms: Buffer;
   cmsSha256: string;
   expected: {
@@ -78,7 +70,7 @@ export interface DeviceEligibilityApi {
     deviceIds: string[];
   }): Promise<ControlResource>;
 }
-export type EligibilityApiFactory = (binding: EligibilityBinding) => Promise<DeviceEligibilityApi>;
+export type EligibilityApiFactory = (binding: AppleAccess) => Promise<DeviceEligibilityApi>;
 export class DeviceEligibilityProbe {
   constructor(
     private db: Database,
@@ -86,7 +78,7 @@ export class DeviceEligibilityProbe {
     private api: EligibilityApiFactory,
     private verify: ControlProfileVerifier = denyControlProfile,
   ) {}
-  private async current(b: EligibilityBinding, udid: string) {
+  private async current(b: AppleAccess, udid: string) {
     await assertAppleAccess(this.db, b);
     const result = await this.db.query<{
       team_id: string;
@@ -110,13 +102,13 @@ export class DeviceEligibilityProbe {
       throw new Failure('CERTIFICATE_REQUIRED', 409);
     const secret = await this.db.query(
       "SELECT id FROM secrets WHERE id=$1 AND owner_id=$2 AND connection_id=$3 AND generation=$4 AND purpose='distribution-key' AND deleted_at IS NULL",
-      [row.identity.secretRef, b.connectionOwnerId ?? b.ownerId, b.connectionId, b.generation],
+      [row.identity.secretRef, b.connectionOwnerId, b.connectionId, b.generation],
     );
     if (!secret.rows.length) throw new Failure('CERTIFICATE_REQUIRED', 409);
     return row;
   }
   private async ensure(
-    b: EligibilityBinding,
+    b: AppleAccess,
     udid: string,
     kind: string,
     request: Record<string, unknown>,
@@ -127,7 +119,7 @@ export class DeviceEligibilityProbe {
     const claim = await this.db.transaction(async (tx) => {
       await tx.query('SELECT id FROM connections WHERE id=$1 AND owner_id=$2 FOR UPDATE', [
         b.connectionId,
-        b.connectionOwnerId ?? b.ownerId,
+        b.connectionOwnerId,
       ]);
       const old = await tx.query<{
         id: string;
@@ -135,7 +127,7 @@ export class DeviceEligibilityProbe {
         resource_id: string | null;
       }>(
         'SELECT id,state,resource_id FROM provisioning_operations WHERE owner_id=$1 AND connection_id=$2 AND generation=$3 AND kind=$4 AND fingerprint=$5',
-        [b.connectionOwnerId ?? b.ownerId, b.connectionId, b.generation, kind, fingerprint],
+        [b.connectionOwnerId, b.connectionId, b.generation, kind, fingerprint],
       );
       if (old.rows[0]) {
         if (old.rows[0].state === 'rejected') {
@@ -152,7 +144,7 @@ export class DeviceEligibilityProbe {
         "INSERT INTO provisioning_operations(id,owner_id,connection_id,generation,kind,fingerprint,state,created_at) VALUES($1,$2,$3,$4,$5,$6,'submitted',$7)",
         [
           operation,
-          b.connectionOwnerId ?? b.ownerId,
+          b.connectionOwnerId,
           b.connectionId,
           b.generation,
           kind,
@@ -199,7 +191,7 @@ export class DeviceEligibilityProbe {
     return result;
   }
   async check(
-    binding: EligibilityBinding,
+    binding: AppleAccess,
     appleResourceId: string,
     inputUdid: string,
   ): Promise<{

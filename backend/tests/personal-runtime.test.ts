@@ -1,9 +1,8 @@
 import { expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
 import { createDatabase } from './helpers/database';
-import { Service } from '../packages/core/src/application/service';
+import { SessionService } from '../packages/core/src/auth/sessions';
 import { CatalogRegistry } from '../packages/core/src/catalog/registry';
-import { InstallationHistory } from '../packages/core/src/library/installation-history';
 import { handleSession } from '../server/http/session';
 import type { AuthenticatedContext } from '../server/http/context';
 it('reads a lightweight session without creating catalogs or reconciling devices', async () => {
@@ -11,7 +10,7 @@ it('reads a lightweight session without creating catalogs or reconciling devices
   await db.query("INSERT INTO users(id,login_name,created_at) VALUES('o','owner',1)");
   const app = {
     db,
-    service: new Service(db, { now: () => 1000 }),
+    sessions: new SessionService(db, { now: () => 1000 }),
     catalogs: new CatalogRegistry(db, () => 1000),
     collections: { reconcileOwner: async () => {}, list: async () => [] },
     sharing: { list: async () => [] },
@@ -38,9 +37,6 @@ it('reads a lightweight session without creating catalogs or reconciling devices
       publicProfileId: 'public',
       verifiedAt: 1000,
     },
-    history: new InstallationHistory(db, () => 1000),
-    uploadAllowed: async () => false,
-    requireUpload: async () => {},
   } as unknown as AuthenticatedContext;
   const reply = await handleSession(context);
   const value = await reply!.json();

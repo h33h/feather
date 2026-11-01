@@ -3,58 +3,15 @@ import { z } from 'zod';
 // Object schemas deliberately project an allowlist at every nesting level.
 // Additional database columns never become part of the public DTO.
 const timestamp = z.number().finite();
-export const warningSchema = z.object({
-  code: z.string(),
-  capability: z.string().optional(),
-  componentPath: z.string(),
-  originalId: z.string().optional(),
-  targetId: z.string().optional(),
-  extensionPoint: z.string().optional(),
-  originalMinOs: z.string().optional(),
-  targetMinOs: z.string().optional(),
-});
-export const jobSchema = z.object({
-  id: z.string(),
-  upload_id: z.string(),
-  device_id: z.string().nullable().optional(),
-  state: z.string(),
-  reason: z.string().nullable(),
-  display_snapshot: z
-    .object({
-      name: z.string().optional(),
-      version: z.string().nullable().optional(),
-      source: z.string().nullable().optional(),
-      device: z.string().optional(),
-    })
-    .nullable()
-    .optional(),
-  warnings: z.array(warningSchema).optional(),
-  attempts: z.number().int().optional(),
-  finished_at: timestamp.nullable().optional(),
-});
-export const librarySchema = z.object({
-  jobs: z.array(jobSchema),
-  artifacts: z.array(
-    z.object({
-      id: z.string(),
-      job_id: z.string(),
-      created_at: timestamp.optional(),
-      eligible: z.boolean(),
-      verified: z.boolean(),
-      expires_at: timestamp,
-      valid_until: timestamp,
-    }),
-  ),
-});
 export const appleSchema = z.object({
   connection: z
     .object({
-      id: z.string().optional(),
-      team_id: z.string().nullable().optional(),
+      id: z.string(),
+      team_id: z.string().nullable(),
       state: z.string(),
       shared: z.boolean(),
-      last_error: z.string().nullable().optional(),
-      identityReady: z.boolean().optional(),
+      last_error: z.string().nullable(),
+      identityReady: z.boolean(),
     })
     .nullable(),
   uploadAllowed: z.boolean(),
@@ -76,8 +33,8 @@ export const deviceSchema = z.object({
   status: z.string(),
   os_version: z.string().nullable(),
   selected: z.boolean(),
-  team_id: z.string().nullable().optional(),
-  os_version_source: z.string().nullable().optional(),
+  team_id: z.string().nullable(),
+  os_version_source: z.string().nullable(),
 });
 export const collectionSchema = z.object({
   id: z.string(),
@@ -103,60 +60,20 @@ export const devicesSchema = z.object({
   devices: z.array(deviceSchema),
   collectedDevices: z.array(collectionSchema),
 });
-export const sourceSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  state: z.string(),
-  kind: z.string(),
-  last_error: z.string().nullable(),
-  revision: z.number().int().optional(),
-  last_sync: timestamp.nullable().optional(),
-  next_refresh_at: timestamp.optional(),
-  refresh_lease_until: timestamp.optional(),
-});
-export const sourcesSchema = z.object({ sources: z.array(sourceSchema) });
-export const releaseSchema = z.object({
-  id: z.string(),
-  appId: z.string().optional(),
-  sourceId: z.string(),
-  snapshot: z.string(),
-  name: z.string(),
-  displayVersion: z.string(),
-  version: z.string().nullable(),
-  description: z.string(),
-  build: z.string().nullable().optional(),
-  bundleId: z.string().nullable().optional(),
-  iconAvailable: z.boolean().optional(),
-  downloadAvailable: z.boolean().optional(),
-});
-export const releasesSchema = z.object({ releases: z.array(releaseSchema) });
-export const historyItemSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  version: z.string().nullable(),
-  finishedAt: timestamp,
-  state: z.enum(['ready', 'failed', 'cancelled']),
-  error: z.string().nullable(),
-  warnings: z.array(warningSchema),
-});
-export const historySchema = z.object({
-  items: z.array(historyItemSchema),
-  nextCursor: z.string().nullable(),
-});
 export const sessionSchema = z.object({
-  authenticated: z.literal(true).optional(),
+  authenticated: z.literal(true),
   csrf: z.string(),
   profile: z.object({
     id: z.string(),
     loginName: z.string(),
     role: z.enum(['user', 'admin']),
-    publicProfileId: z.string().optional(),
+    publicProfileId: z.string(),
   }),
   capabilities: z.object({
-    runner: z.boolean().optional(),
-    appleOnboarding: z.boolean().optional(),
-    bootstrap: z.boolean().optional(),
-    deviceEnrollment: z.boolean().optional(),
+    runner: z.boolean(),
+    appleOnboarding: z.boolean(),
+    bootstrap: z.boolean(),
+    deviceEnrollment: z.boolean(),
   }),
 });
 export const adminUserSchema = z.object({
@@ -168,17 +85,10 @@ export const adminUserSchema = z.object({
 export const adminUsersSchema = z.object({ users: z.array(adminUserSchema) });
 export const inviteSchema = z.object({ token: z.string(), expiresAt: timestamp });
 export type UiDevice = z.infer<typeof deviceSchema>;
-export type UiJob = z.infer<typeof jobSchema>;
-export type Source = z.infer<typeof sourceSchema>;
-export type Release = z.infer<typeof releaseSchema>;
 export type Collection = z.infer<typeof collectionSchema>;
-export type HistoryItem = z.infer<typeof historyItemSchema>;
-export type HistoryPage = z.infer<typeof historySchema>;
 export type AuthSession = z.infer<typeof sessionSchema>;
 export type AppleData = z.infer<typeof appleSchema>;
 export type DeviceData = z.infer<typeof devicesSchema>;
-export type LibraryData = z.infer<typeof librarySchema>;
-export type SourcesData = z.infer<typeof sourcesSchema>;
 export type AdminUser = z.infer<typeof adminUserSchema>;
 
 // Native catalog DTOs intentionally have a separate projection from the web UI.

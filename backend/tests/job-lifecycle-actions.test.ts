@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { createDatabase } from './helpers/database';
-import { JobsActions } from '../packages/core/src/signing/jobs-actions';
+import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
 async function fixture() {
   const db = await createDatabase();
   await db.query(
@@ -24,27 +24,27 @@ async function fixture() {
 }
 it('queues immediately without a confirmation or consent roundtrip', async () => {
   const db = await fixture();
-  const actions = new JobsActions(db, () => 1000);
-  expect(await actions.ensure('o', { uploadId: 'u', deviceId: 'd', key: 'key' })).toMatchObject({
-    state: 'queued',
-    reason: null,
-  });
+  const actions = new JobLifecycle(db, () => 1000);
+  expect(await actions.enqueue('o', 'u', 'key', 'd')).toMatchObject({ created: true });
+  expect((await db.query('SELECT state,reason FROM jobs')).rows).toEqual([
+    { state: 'queued', reason: null },
+  ]);
   expect((await db.query('SELECT connection_owner_id FROM jobs')).rows).toEqual([
     { connection_owner_id: 'o' },
   ]);
 });
 it('rejects replay with a different target device', async () => {
   const db = await fixture();
-  const actions = new JobsActions(db, () => 1000);
-  await actions.ensure('o', { uploadId: 'u', deviceId: 'd', key: 'key' });
-  await expect(
-    actions.ensure('o', { uploadId: 'u', deviceId: 'other', key: 'key' }),
-  ).rejects.toThrow('IDEMPOTENCY_BINDING_MISMATCH');
+  const actions = new JobLifecycle(db, () => 1000);
+  await actions.enqueue('o', 'u', 'key', 'd');
+  await expect(actions.enqueue('o', 'u', 'key', 'other')).rejects.toThrow(
+    'IDEMPOTENCY_BINDING_MISMATCH',
+  );
 });
 it('cancellation fences the lease and task and requests physical source cleanup', async () => {
   const db = await fixture();
-  const actions = new JobsActions(db, () => 1000);
-  const job = await actions.ensure('o', { uploadId: 'u', deviceId: 'd', key: 'key' });
+  const actions = new JobLifecycle(db, () => 1000);
+  const job = await actions.enqueue('o', 'u', 'key', 'd');
   await db.query(
     "UPDATE jobs SET state='signing',lease_token='lease',lease_expires=2000 WHERE id=$1",
     [job.id],
@@ -63,12 +63,11 @@ it('cancellation fences the lease and task and requests physical source cleanup'
   expect((await db.query('SELECT delete_requested_at FROM uploads')).rows).toEqual([
     { delete_requested_at: 1000 },
   ]);
-  await expect(actions.retry('o', job.id)).rejects.toThrow('SOURCE_RELOAD_REQUIRED');
 });
 it('does not let another active user cancel or read a private job', async () => {
   const db = await fixture();
-  const actions = new JobsActions(db, () => 1000);
-  const job = await actions.ensure('o', { uploadId: 'u', deviceId: 'd', key: 'key' });
+  const actions = new JobLifecycle(db, () => 1000);
+  const job = await actions.enqueue('o', 'u', 'key', 'd');
   await expect(actions.cancel('foreign', job.id)).rejects.toThrow('NOT_FOUND');
   expect((await db.query('SELECT state FROM jobs')).rows).toEqual([{ state: 'queued' }]);
 });

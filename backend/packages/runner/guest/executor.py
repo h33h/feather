@@ -66,6 +66,14 @@ def validate_plan(task, grant, root, now, mapped=False):
         or not isinstance(profiles, dict)
     ):
         reject("PLAN_INVALID")
+    if any(
+        not isinstance(component, dict)
+        or not isinstance(component.get("sourceBundleId"), str)
+        or not component["sourceBundleId"]
+        or not isinstance(component.get("sourceEntitlements"), dict)
+        for component in components
+    ):
+        reject("SOURCE_IDENTITY_REQUIRED")
 
     def identity_valid(value):
         return (
@@ -88,10 +96,8 @@ def validate_plan(task, grant, root, now, mapped=False):
     if len(mains) != 1 or not re.fullmatch(r"Payload/[^/]+\.app", str(mains[0].get("path", ""))):
         reject("MAIN_APP_REQUIRED")
     main = mains[0]
-    mapping = any(
-        c.get("sourceBundleId", c.get("bundleId")) != c.get("bundleId") for c in components
-    )
-    main_source = main.get("sourceBundleId", main.get("bundleId"))
+    mapping = any(c["sourceBundleId"] != c.get("bundleId") for c in components)
+    main_source = main["sourceBundleId"]
     paths = set()
     folded = set()
     bundleids = set()
@@ -117,7 +123,7 @@ def validate_plan(task, grant, root, now, mapped=False):
             or (c is not main and not path.startswith(main["path"] + "/"))
         ):
             reject("COMPONENT_GRAPH_REJECTED")
-        source = c.get("sourceBundleId", bid)
+        source = c["sourceBundleId"]
         identifier_pattern = (
             r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*"
             if kind == "framework"
@@ -155,7 +161,7 @@ def validate_plan(task, grant, root, now, mapped=False):
                 or task["udid"] not in p.get("udids", [])
                 or not entitlement_policy.exact(
                     ent,
-                    entitlement_policy.normalized_entitlements(c.get("sourceEntitlements", {}), p),
+                    entitlement_policy.normalized_entitlements(c["sourceEntitlements"], p),
                 )
             ):
                 reject("PROFILE_MISMATCH")
@@ -188,7 +194,7 @@ def validate_plan(task, grant, root, now, mapped=False):
             originals = {
                 node["sourceBundleId"]
                 for node in components
-                if node.get("sourceBundleId", node["bundleId"]) != node["bundleId"]
+                if node["sourceBundleId"] != node["bundleId"]
             }
 
             def references(value, top=False):

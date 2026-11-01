@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -5,7 +6,8 @@ import { join } from 'node:path';
 import { createDatabase } from './helpers/database';
 import { ownAuthority } from './helpers/seed-authority';
 import { PersonalObjects, PersonalArtifacts } from '../packages/core/src/library/personal-storage';
-import { Publisher, digest, type VerifiedReport } from '../packages/core/src/signing/publisher';
+import { Publisher } from '../packages/core/src/signing/publisher';
+import type { VerifiedReport } from '../packages/core/src/shared/runner-contracts';
 for (const loseStorage of [false, true])
   it(`publisher confirms real local bytes before committing (storage loss=${loseStorage})`, async () => {
     const db = await createDatabase(),
@@ -57,12 +59,13 @@ for (const loseStorage of [false, true])
         'j',
         'lease',
         'synthetic-vm',
-        digest(Buffer.from('plan')),
+        createHash('sha256').update(Buffer.from('plan')).digest('hex'),
+        999999999,
       );
       const bytes = Buffer.from('synthetic artifact');
       const report: VerifiedReport = {
         ...grant,
-        artifactDigest: digest(bytes),
+        artifactDigest: createHash('sha256').update(bytes).digest('hex'),
         bundleId: 'test.fixture',
         version: '1',
         title: 'Fixture',

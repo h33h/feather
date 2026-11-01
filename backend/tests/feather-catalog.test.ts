@@ -1,3 +1,4 @@
+import { storedReleases } from './helpers/catalog';
 import { expect, it } from 'vitest';
 import { createDatabase } from './helpers/database';
 import { loginFixture } from './helpers/login';
@@ -12,7 +13,6 @@ import {
   featherFeedSchema,
   featherSourcesSchema,
   featherDownloadSchema,
-  sourcesSchema,
 } from '../packages/contracts/src';
 
 const host = 'files.example.invalid';
@@ -150,11 +150,6 @@ it('ingests real AltStore JSON and preserves repository, app, news and every his
       expiresAt: 70000,
     });
   }
-  // Existing web projections continue to hide foreign download URLs.
-  expect(JSON.stringify(await h.registry.releases(h.owner, h.source.id))).not.toContain('https://');
-  expect(
-    sourcesSchema.parse({ sources: await h.registry.list(h.owner) }).sources[0],
-  ).not.toHaveProperty('canonical_url');
 });
 
 it('converts GBox and metadata-only releases without inventing downloadable URLs', async () => {
@@ -186,7 +181,7 @@ it('converts GBox and metadata-only releases without inventing downloadable URLs
   );
   expect(feed.repository.apps.find((a) => a.name === 'Read me')!.downloadURL).toBeUndefined();
   expect(feed.repository.apps.find((a) => a.name === 'Read me')!.iconURL).toBeUndefined();
-  const info = (await h.registry.releases(h.owner, h.source.id)).find((r) => !r.downloadAvailable)!;
+  const info = (await storedReleases(h.db, h.owner, h.source.id)).find((r) => !r.metadata.url)!;
   await expect(
     h.catalog.download(h.owner, {
       sourceId: h.source.id,
@@ -359,7 +354,7 @@ it('rejects private DNS targets and obsolete selections after a preflight while 
   ).rejects.toThrow('INVALID_DOWNLOAD_REFERENCE');
 });
 
-it('adapts stored GBox snapshots created before the native JSONB extensions', async () => {
+it('rejects stored catalog rows without current snapshot metadata', async () => {
   const h = await setup({
     appRepositories: [
       { appName: 'Legacy app', appVersion: '1.0', appPackage: `https://${host}/legacy.ipa` },
@@ -369,11 +364,7 @@ it('adapts stored GBox snapshots created before the native JSONB extensions', as
   await h.db.query("UPDATE sources SET feed=feed-'snapshot'-'repository' WHERE id=$1", [
     h.source.id,
   ]);
-  const feed = featherFeedSchema.parse(await h.catalog.feed(h.owner, h.source.id));
-  expect(feed.repository.apps[0].name).toBe('Legacy app');
-  expect(
-    (await h.catalog.download(h.owner, reference(feed.repository.apps[0].downloadURL!))).url,
-  ).toBe(`https://${host}/legacy.ipa`);
+  await expect(h.catalog.feed(h.owner, h.source.id)).rejects.toThrow('SOURCE_METADATA_ONLY');
 });
 
 it('preserves supported GBox repository metadata and app update information', async () => {
@@ -402,12 +393,9 @@ it('preserves supported GBox repository metadata and app update information', as
   expect(feed.repository.apps[0].versionDate).toBe('2026-10-31');
 });
 
-it('keeps empty-version legacy GBox information entries readable', async () => {
+it('keeps supported empty-version GBox information entries readable', async () => {
   const h = await setup({ appRepositories: [{ appName: 'Information', appVersion: '' }] });
   await h.registry.refresh(h.owner, h.source.id);
-  await h.db.query("UPDATE sources SET feed=feed-'snapshot'-'repository' WHERE id=$1", [
-    h.source.id,
-  ]);
   const feed = await h.catalog.feed(h.owner, h.source.id);
   expect(feed.repository.apps[0].name).toBe('Information');
   expect(feed.repository.apps[0].versions).toBeUndefined();

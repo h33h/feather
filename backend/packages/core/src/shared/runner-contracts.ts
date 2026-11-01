@@ -1,6 +1,6 @@
 export type ExecutorGrant = {
   ownerId: string;
-  connectionOwnerId?: string;
+  connectionOwnerId: string;
   accessGrantId?: string;
   accessGrantGeneration?: number;
   jobId: string;

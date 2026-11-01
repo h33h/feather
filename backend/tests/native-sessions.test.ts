@@ -253,35 +253,13 @@ it('cannot redeem a code for an alternate callback', async () => {
   ).rejects.toThrow('NATIVE_AUTH_INVALID');
   await f.exchange(s.transactionId, code);
 });
-it('rejects server startup when the native migration has not been applied', async () => {
+it('rejects server startup when the native schema is incomplete', async () => {
   const { assertInitializedDatabase } =
     await import('../packages/core/src/infrastructure/database-init');
   const f = await fixture();
-  await assertInitializedDatabase(f.db, { native: true });
-  await f.db.exec('DROP TABLE native_auth_transactions');
-  await expect(assertInitializedDatabase(f.db, { native: true })).rejects.toThrow(
-    'DATABASE_UNINITIALIZED',
-  );
-});
-it('applies the additive migration to a previous web-only schema and preserves web auth', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const { assertInitializedDatabase } =
-    await import('../packages/core/src/infrastructure/database-init');
-  const f = await fixture();
-  await f.db.exec(
-    'DROP TABLE native_auth_transactions; DROP TABLE native_refresh_tokens; DROP TABLE native_sessions',
-  );
   await assertInitializedDatabase(f.db);
-  await f.db.transaction((tx) => resetCredentials(tx, 'u', f.getNow()));
-  await f.db.exec(
-    await readFile(
-      new URL('../packages/db/migrations/20261031-native-feather.sql', import.meta.url),
-      'utf8',
-    ),
-  );
-  await assertInitializedDatabase(f.db, { native: true });
-  const tokens = await f.login();
-  expect((await f.native.authorize(tokens.accessToken)).ownerId).toBe('u');
+  await f.db.exec('DROP TABLE native_auth_transactions');
+  await expect(assertInitializedDatabase(f.db)).rejects.toThrow('DATABASE_UNINITIALIZED');
 });
 it('rechecks a web cookie revoked by recovery while waiting for the owner lock', async () => {
   const f = await fixture(),

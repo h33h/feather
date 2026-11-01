@@ -17,7 +17,6 @@ export function nativeBearer(request: PublicContext['request']) {
 export async function handleNativeAuth({ request, target, app }: PublicContext) {
   if (!target.startsWith('native/v1/')) return null;
   const native = app.nativeSessions;
-  if (!native) throw new Failure('NATIVE_API_UNAVAILABLE', 503);
   if (
     request.method === 'POST' &&
     ['native/v1/auth/start', 'native/v1/auth/exchange', 'native/v1/auth/refresh'].includes(
@@ -74,8 +73,7 @@ export async function handleNativeAuth({ request, target, app }: PublicContext) 
 /** Browser completion keeps the existing web CSRF and Origin contract. */
 export async function handleNativeCompletion({ request, target, app, raw, csrf }: PublicContext) {
   if (target !== 'auth/native/complete' || request.method !== 'POST') return null;
-  if (!app.nativeSessions) throw new Failure('NATIVE_API_UNAVAILABLE', 503);
-  await app.service.authorizeWrite(raw, csrf, request.headers.get('origin') ?? '', origin);
+  await app.sessions.authorizeWrite(raw, csrf, request.headers.get('origin') ?? '', origin);
   const { transactionId } = z
     .object({ transactionId: z.string().max(128) })
     .parse(await body(request, 4096));

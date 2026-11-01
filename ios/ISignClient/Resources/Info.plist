@@ -119,7 +119,6 @@
 			<string>thewonderofyou.Feather</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>feather</string>
 				<string>isign-feather</string>
 			</array>
 		</dict>

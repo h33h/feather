@@ -20,6 +20,7 @@ class BootstrapTests(unittest.TestCase):
         self.root = pathlib.Path(self.temp.name).resolve()
         self.calls = []
         self.grant = {
+            "connectionOwnerId": "o",
             "ownerId": "o",
             "jobId": "bootstrap:n",
             "leaseToken": "l",

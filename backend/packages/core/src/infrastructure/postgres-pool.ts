@@ -1,5 +1,6 @@
 import { Pool, types, type PoolConfig } from 'pg';
-import { ProviderError, requireServer, type ServerSecret } from './config';
+import { requireServer, type ServerSecret } from './config';
+import { ProviderError } from '../shared/errors';
 import { postgresQuery } from './postgres-query';
 import type { SqlPool } from './postgres';
 export function safeBigint(value: string) {

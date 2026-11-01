@@ -1,7 +1,7 @@
 import type { ExecutorGrant, VerifiedReport } from '../shared/runner-contracts';
 export interface DisposableExecutor {
   id: string;
-  expiresAt?: number;
+  expiresAt: number;
   execute(input: { grant: ExecutorGrant; task: unknown; signal: AbortSignal }): Promise<{
     report: VerifiedReport;
     attestation: string;
@@ -14,13 +14,13 @@ export interface ExecutorProvider {
   launch(input: {
     ownerId: string;
     jobId: string;
-    launchNonce?: string;
+    launchNonce: string;
     signal: AbortSignal;
     maxRuntimeMs: number;
     maxInputBytes: number;
     maxUnpackedBytes: number;
     maxEntries: number;
   }): Promise<DisposableExecutor>;
-  retireLaunch?(nonce: string): Promise<void>;
+  retireLaunch(nonce: string): Promise<void>;
   verifyInstance(instance: DisposableExecutor): Promise<boolean>;
 }

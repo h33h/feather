@@ -1,3 +1,5 @@
+import { collectedDeviceFixture } from './helpers/device';
+import { createHash } from 'node:crypto';
 import { afterEach, expect, it } from 'vitest';
 import { createDatabase } from './helpers/database';
 import {
@@ -6,10 +8,10 @@ import {
   resolveAppleAccess,
 } from '../packages/core/src/apple/access';
 import { DeviceOnboarding, profileServiceXml } from '../packages/core/src/devices/onboarding';
-import { JobsActions } from '../packages/core/src/signing/jobs-actions';
+import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
 import { hash } from '../packages/core/src/shared/index';
-import { Service } from '../packages/core/src/application/service';
-import { Publisher, digest, type VerifiedReport } from '../packages/core/src/signing/publisher';
+import { Publisher } from '../packages/core/src/signing/publisher';
+import type { VerifiedReport } from '../packages/core/src/shared/runner-contracts';
 import { Tickets } from '../packages/core/src/library/tickets';
 import { Vault } from '../packages/core/src/apple/vault';
 import { PipelineCoordinator, type AnalysisVm } from '../packages/core/src/signing/pipeline';
@@ -55,21 +57,8 @@ async function enrolled(
     register: async () => ({ id: 'apple-device', status: 'ENABLED', eligible: true }),
   },
 ) {
-  let challenge = '';
-  const devices = new DeviceOnboarding(
-    h.db,
-    api,
-    () => 100,
-    async () => ({
-      challenge,
-      udid: 'A'.repeat(40),
-      signatureVerified: true,
-      issuerTrusted: true,
-      deviceCertificate: true,
-    }),
-  );
-  challenge = (await devices.challenge('recipient', 'connection')).challenge;
-  const result = await devices.callback(challenge, Buffer.from('SYNTHETIC TRUSTED CMS PAYLOAD'));
+  const devices = new DeviceOnboarding(h.db, api, () => 100);
+  const result = await collectedDeviceFixture(h.db, 'recipient', 'connection', 'A'.repeat(40));
   await devices.reportOs('recipient', result.id, '18.0');
   await devices.register('recipient', result.id, true);
   return { devices, device: result.id };
@@ -91,7 +80,7 @@ it('public profile ID is a lookup, only an owner may share or revoke', async () 
   await h.sharing.revoke('owner', h.offered.id);
   await expect(assertAppleAccess(h.db, access)).rejects.toThrow('APPLE_ACCESS_UNAVAILABLE');
 });
-it('mandatory minimal profile cannot be replaced by manual/foreign provenance or revoked nonce', async () => {
+it('mandatory minimal profile and current Apple access gate device registration', async () => {
   const h = await accepted();
   const { devices, device } = await enrolled(h);
   const profile = profileServiceXml('https://synthetic.invalid', 'a'.repeat(43));
@@ -103,16 +92,14 @@ it('mandatory minimal profile cannot be replaced by manual/foreign provenance or
   ]);
   expect(profile).not.toMatch(/<string>(SERIAL|IMEI)<\/string>|MDM|SCEP/);
   await expect(devices.register('other', device, true)).rejects.toThrow('DEVICE_NOT_FOUND');
-  const challenge = await devices.challenge('recipient', 'connection');
   await h.sharing.revoke('owner', h.offered.id);
-  await expect(devices.callback(challenge.challenge, Buffer.from('synthetic'))).rejects.toThrow();
+  await expect(devices.register('recipient', device, true)).rejects.toThrow('DEVICE_NOT_FOUND');
   expect((await h.db.query('SELECT id FROM signing_devices')).rows).toHaveLength(0);
 });
 it('registration timeout and concurrent retries use durable GET reconciliation with one POST', async () => {
   const h = await accepted();
   let posts = 0,
-    exists = false,
-    current = '';
+    exists = false;
   const devices = new DeviceOnboarding(
     h.db,
     {
@@ -124,16 +111,8 @@ it('registration timeout and concurrent retries use durable GET reconciliation w
       },
     },
     () => 100,
-    async () => ({
-      challenge: current,
-      udid: 'B'.repeat(40),
-      signatureVerified: true,
-      issuerTrusted: true,
-      deviceCertificate: true,
-    }),
   );
-  current = (await devices.challenge('recipient', 'connection')).challenge;
-  const device = await devices.callback(current, Buffer.from('trusted synthetic CMS'));
+  const device = await collectedDeviceFixture(h.db, 'recipient', 'connection', 'B'.repeat(40));
   await expect(devices.register('recipient', device.id, true)).rejects.toThrow(
     'synthetic remote timeout',
   );
@@ -151,8 +130,7 @@ it('registration timeout and concurrent retries use durable GET reconciliation w
 });
 it('revoke after POST keeps result evidence, fences final readiness, never deletes the Apple device', async () => {
   const h = await accepted();
-  let current = '',
-    posts = 0;
+  let posts = 0;
   const devices = new DeviceOnboarding(
     h.db,
     {
@@ -164,16 +142,8 @@ it('revoke after POST keeps result evidence, fences final readiness, never delet
       },
     },
     () => 100,
-    async () => ({
-      challenge: current,
-      udid: 'C'.repeat(40),
-      signatureVerified: true,
-      issuerTrusted: true,
-      deviceCertificate: true,
-    }),
   );
-  current = (await devices.challenge('recipient', 'connection')).challenge;
-  const device = await devices.callback(current, Buffer.from('synthetic'));
+  const device = await collectedDeviceFixture(h.db, 'recipient', 'connection', 'C'.repeat(40));
   await expect(devices.register('recipient', device.id, true)).rejects.toThrow(
     'CONNECTION_CHANGED',
   );
@@ -193,16 +163,12 @@ for (const revokeAt of ['none', 'unwrap', 'publication'] as const)
       const h = await accepted();
       const { device } = await enrolled(h);
       await upload(h);
-      const actions = new JobsActions(
+      const actions = new JobLifecycle(
         h.db,
         () => 100,
         async () => {},
       );
-      const job = await actions.ensure('recipient', {
-        uploadId: 'upload',
-        deviceId: device,
-        key: 'synthetic',
-      });
+      const job = await actions.enqueue('recipient', 'upload', 'synthetic', device);
       await h.db.query(
         "UPDATE jobs SET state='provisioning',lease_token='lease',lease_expires=999999 WHERE id=$1",
         [job.id],
@@ -230,7 +196,7 @@ for (const revokeAt of ['none', 'unwrap', 'publication'] as const)
         {
           put: async () => {
             if (revokeAt === 'publication') await h.sharing.revoke('owner', h.offered.id);
-            return { digest: digest(bytes), size: bytes.length };
+            return { digest: createHash('sha256').update(bytes).digest('hex'), size: bytes.length };
           },
           delete: async () => {
             deleted = true;
@@ -245,6 +211,7 @@ for (const revokeAt of ['none', 'unwrap', 'publication'] as const)
         'lease',
         'synthetic-vm',
         'a'.repeat(64),
+        999999999,
       );
       expect(grant).toMatchObject({
         ownerId: 'recipient',
@@ -266,7 +233,7 @@ for (const revokeAt of ['none', 'unwrap', 'publication'] as const)
       );
       const report: VerifiedReport = {
         ...grant,
-        artifactDigest: digest(bytes),
+        artifactDigest: createHash('sha256').update(bytes).digest('hex'),
         bundleId: 'test.synthetic',
         version: '1',
         title: 'Synthetic fixture',
@@ -318,21 +285,23 @@ it('full PipelineCoordinator synthetic recipient signing keeps recipient-owned d
   const h = await accepted();
   const { device } = await enrolled(h);
   await upload(h);
-  const service = new Service(h.db, { now: () => 100 }),
-    actions = new JobsActions(
+  const service = new JobLifecycle(h.db, () => 100),
+    actions = new JobLifecycle(
       h.db,
       () => 100,
       async () => {},
     ),
-    job = await actions.ensure('recipient', {
-      uploadId: 'upload',
-      deviceId: device,
-      key: 'pipeline',
-    });
+    job = await actions.enqueue('recipient', 'upload', 'pipeline', device);
   const bytes = Buffer.from('SYNTHETIC PIPELINE ARTIFACT'),
     publisher = new Publisher(
       h.db,
-      { put: async () => ({ digest: digest(bytes), size: bytes.length }), delete: async () => {} },
+      {
+        put: async () => ({
+          digest: createHash('sha256').update(bytes).digest('hex'),
+          size: bytes.length,
+        }),
+        delete: async () => {},
+      },
       { verify: async () => true },
       () => 100,
     );
@@ -374,7 +343,7 @@ it('full PipelineCoordinator synthetic recipient signing keeps recipient-owned d
     execute: async ({ grant }) => ({
       report: {
         ...grant,
-        artifactDigest: digest(bytes),
+        artifactDigest: createHash('sha256').update(bytes).digest('hex'),
         bundleId: 'test.synthetic',
         version: '1',
         title: 'Synthetic',
@@ -400,7 +369,11 @@ it('full PipelineCoordinator synthetic recipient signing keeps recipient-owned d
     publisher,
     mapping: new MappingService(h.db),
     now: () => 100,
-    provider: { launch: async () => vm, verifyInstance: async () => true },
+    provider: {
+      launch: async () => vm,
+      verifyInstance: async () => true,
+      retireLaunch: async () => {},
+    },
     attestor: { verify: async () => true },
     storage: {
       read: async () => ({
@@ -457,8 +430,7 @@ it('full PipelineCoordinator synthetic recipient signing keeps recipient-owned d
 });
 it('Apple ENABLED freshness gates ticket admission and expired grant snapshots cannot revive after reaccept', async () => {
   const h = await accepted();
-  let enabled = true,
-    current = '';
+  let enabled = true;
   const devices = new DeviceOnboarding(
     h.db,
     {
@@ -471,24 +443,16 @@ it('Apple ENABLED freshness gates ticket admission and expired grant snapshots c
       },
     },
     () => 100,
-    async () => ({
-      challenge: current,
-      udid: 'D'.repeat(40),
-      signatureVerified: true,
-      issuerTrusted: true,
-      deviceCertificate: true,
-    }),
   );
-  current = (await devices.challenge('recipient', 'connection')).challenge;
-  const d = await devices.callback(current, Buffer.from('synthetic trusted CMS'));
+  const d = await collectedDeviceFixture(h.db, 'recipient', 'connection', 'D'.repeat(40));
   await devices.reportOs('recipient', d.id, '18.0');
   await devices.register('recipient', d.id, true);
   await upload(h);
-  const job = await new JobsActions(
+  const job = await new JobLifecycle(
     h.db,
     () => 100,
     async () => {},
-  ).ensure('recipient', { uploadId: 'upload', deviceId: d.id, key: 'freshness' });
+  ).enqueue('recipient', 'upload', 'freshness', d.id);
   await h.db.query("UPDATE jobs SET state='ready' WHERE id=$1", [job.id]);
   await h.db.query(
     "INSERT INTO artifacts(id,owner_id,job_id,connection_id,device_id,object_key,digest,metadata,valid_until,created_at,expires_at,verified) VALUES('fresh-artifact','recipient',$1,'connection',$2,'synthetic-artifact','synthetic',$3,999999,0,999999,true)",
@@ -511,8 +475,7 @@ it('Apple ENABLED freshness gates ticket admission and expired grant snapshots c
       .status,
   ).toBe('disabled');
   await h.sharing.revoke('owner', h.offered.id);
-  const { grantId: nextId } = await h.sharing.share('owner', h.publicId);
-  const next = { id: nextId, generation: 2 };
+  await h.sharing.share('owner', h.publicId);
 
   expect((await h.db.query('SELECT id FROM signing_jobs')).rows).toHaveLength(0);
   expect((await h.db.query('SELECT id FROM signing_artifacts')).rows).toHaveLength(0);
@@ -525,8 +488,7 @@ it('owner and multiple recipients preserve the same Apple bundle with separate c
       "SELECT public_profile_id FROM users WHERE id='other'",
     )
   ).rows[0].public_profile_id;
-  const { grantId } = await h.sharing.share('owner', otherId);
-  const grant = { id: grantId, generation: 1 };
+  await h.sharing.share('owner', otherId);
 
   const mappings = new MappingService(h.db);
   const rows = await Promise.all(

@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { createDatabase } from './helpers/database';
 import { Vault, type Kms } from '../packages/core/src/apple/vault';
-import { Publisher, type ExecutorGrant } from '../packages/core/src/signing/publisher';
+import { Publisher } from '../packages/core/src/signing/publisher';
+import type { ExecutorGrant } from '../packages/core/src/shared/runner-contracts';
 async function fixture() {
   const db = await createDatabase();
   let now = 10000;
@@ -50,7 +51,14 @@ async function fixture() {
     { verify: async () => false },
     () => now,
   );
-  const grant = await publisher.grant('owner', 'job', 'synthetic-lease', 'synthetic-isolated-vm');
+  const grant = await publisher.grant(
+    'owner',
+    'job',
+    'synthetic-lease',
+    'synthetic-isolated-vm',
+    undefined,
+    999999999,
+  );
   return {
     db,
     vault,

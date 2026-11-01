@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { Database } from '../shared/database';
-import { ProviderError } from './config';
+import { ProviderError } from '../shared/errors';
 /** Only invoked by explicit operator init-vault, never application startup. */
 export async function initializePersonalVault(
   db: Database,

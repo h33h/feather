@@ -29,8 +29,6 @@ function PendingDevice({
   const statuses: Record<string, string> = {
     registering: 'Регистрация устройства отправлена в Apple. Проверьте её состояние.',
     apple_processing: 'Apple обрабатывает регистрацию устройства. Повторите проверку позже.',
-    pending: 'Apple обрабатывает регистрацию устройства. Повторите проверку позже.',
-    processing: 'Apple обрабатывает регистрацию устройства. Повторите проверку позже.',
     certificate_required:
       'Для проверки устройства нужен действующий сертификат команды. Проверьте подготовку Apple-аккаунта и повторите проверку устройства.',
     ineligible:
@@ -164,10 +162,10 @@ export function InstallerDevice({
       {devices.devices.length > 0 || devices.collectedDevices.length > 0 ? (
         <details>
           <summary>Добавить другое устройство</summary>
-          <DeviceProfile api={api} action={action} busy={busy} enrollment />
+          <DeviceProfile api={api} action={action} busy={busy} />
         </details>
       ) : (
-        <DeviceProfile api={api} action={action} busy={busy} enrollment />
+        <DeviceProfile api={api} action={action} busy={busy} />
       )}
     </>
   );

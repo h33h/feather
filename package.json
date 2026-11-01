@@ -15,7 +15,6 @@
     "brand:assets": "node backend/scripts/brand-assets.mjs",
     "test:browser": "PLAYWRIGHT_CHANNEL=chrome playwright test",
     "personal:admin": "tsx backend/scripts/personal-admin.ts",
-    "migrate:feather": "tsx backend/scripts/migrate-feather.ts",
     "setup:catalog": "node backend/scripts/install-isignkit.mjs",
     "prepare": "node backend/scripts/setup-tools.mjs",
     "format": "pnpm format:web && pnpm format:python",
@@ -29,7 +28,6 @@
     "check:hooks": "node --test backend/scripts/hooks.test.mjs",
     "test:deploy": "node --test backend/scripts/deploy.test.mjs",
     "setup:runner": "node backend/scripts/setup-runner.mjs",
-    "migrate:client-installer": "tsx backend/scripts/migrate-client-installer.ts",
     "package:client": "node backend/scripts/package-client.mjs"
   },
   "dependencies": {

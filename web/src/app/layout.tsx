@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from 'next';
-import { RetireWebApp } from '../features/pwa/registration';
 import { ThemeProvider } from '../shared/ui/theme-control';
 import { themeScript } from '../shared/ui/theme';
 import './globals.css';
@@ -29,7 +28,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <ThemeProvider>{children}</ThemeProvider>
-        <RetireWebApp />
       </body>
     </html>
   );

@@ -58,7 +58,7 @@ export class Provisioning {
         'SELECT id FROM secrets WHERE id=$1 AND owner_id=$2 AND connection_id=$3 AND generation=$4 AND deleted_at IS NULL AND purpose=$5',
         [
           keyRef,
-          grant.connectionOwnerId ?? grant.ownerId,
+          grant.connectionOwnerId,
           grant.connectionId,
           grant.connectionGeneration,
           SECRET_PURPOSES.distributionKey,
@@ -75,7 +75,7 @@ export class Provisioning {
       }>(
         'SELECT id,state,resource_id FROM provisioning_operations WHERE owner_id=$1 AND connection_id=$2 AND generation=$3 AND kind=$4 AND fingerprint=$5',
         [
-          grant.connectionOwnerId ?? grant.ownerId,
+          grant.connectionOwnerId,
           grant.connectionId,
           grant.connectionGeneration,
           kind,
@@ -88,7 +88,7 @@ export class Provisioning {
         "INSERT INTO provisioning_operations(id,owner_id,connection_id,generation,kind,fingerprint,state,key_ref,created_at) VALUES($1,$2,$3,$4,$5,$6,'submitted',$7,$8)",
         [
           operationId,
-          grant.connectionOwnerId ?? grant.ownerId,
+          grant.connectionOwnerId,
           grant.connectionId,
           grant.connectionGeneration,
           kind,

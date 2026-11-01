@@ -126,13 +126,7 @@ class HttpBindingAuthorizer:
         self.key = proof_key
         self.clock = clock
 
-    def __call__(self, *args):
-        if len(args) == 3:
-            _, operation, binding = args
-        elif len(args) == 2:
-            operation, binding = args
-        else:
-            raise ValueError("AUTHORIZER_BINDING_REQUIRED")
+    def __call__(self, _principal, operation, binding):
         nonce = secrets.token_urlsafe(32)
         request = {
             "operation": operation,
@@ -348,17 +342,16 @@ class HTTPSGuestChannel:
                 raise ValueError("ARTIFACT_CHUNK_INVALID") from exc
             if len(chunk) > ARTIFACT_BATCH_LIMIT:
                 raise ValueError("ARTIFACT_CHUNK_INVALID")
+            if not chunk:
+                raise ValueError("ARTIFACT_STREAM_INVALID")
             # Keep broker authorization/cancellation at its existing 64 KiB
             # cadence. Do not fetch the next batch until every slice is consumed.
             for start in range(0, len(chunk), ARTIFACT_SLICE_BYTES):
                 active()
                 yield chunk[start : start + ARTIFACT_SLICE_BYTES]
-            if chunk:
-                offset += len(chunk)
+            offset += len(chunk)
             if value["done"] is True:
                 break
-            if not chunk:
-                raise ValueError("ARTIFACT_STREAM_INVALID")
 
     def revoke(self, channel):
         if channel.get("revoked"):

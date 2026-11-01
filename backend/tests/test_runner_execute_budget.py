@@ -44,6 +44,7 @@ time.sleep(10)
     def envelope(self, change=None):
         now = int(time.time() * 1000)
         grant = {
+            "connectionOwnerId": "o",
             "ownerId": "o",
             "jobId": "j",
             "leaseToken": "l",

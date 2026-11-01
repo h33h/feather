@@ -1,7 +1,8 @@
 import { initializeDatabase } from '../packages/core/src/infrastructure/database-init';
 import { initializePersonalVault } from '../packages/core/src/infrastructure/personal-bootstrap';
 import { loadPrivateEnvironment } from '../packages/core/src/infrastructure/private-environment';
-import { loadProviderConfig, ProviderError } from '../packages/core/src/infrastructure/config';
+import { loadProviderConfig } from '../packages/core/src/infrastructure/config';
+import { ProviderError } from '../packages/core/src/shared/errors';
 import { createPersonalPool } from '../packages/core/src/composition/personal-kernel';
 import { ProductionDatabase } from '../packages/core/src/infrastructure/postgres';
 import { PersonalAuth } from '../packages/core/src/auth/passkeys';

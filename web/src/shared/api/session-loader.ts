@@ -1,7 +1,7 @@
 import { sessionSchema, type Api, type AuthSession } from './contracts';
 import { query } from './query';
 type Cell<T> = { current: T };
-export type SessionLoadState = {
+type SessionLoadState = {
   generation: Cell<number>;
   request: Cell<Promise<AuthSession | null> | null>;
   accept: (session: AuthSession) => void;

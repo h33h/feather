@@ -226,6 +226,7 @@ class AnalyzerTests(unittest.TestCase):
 
     def test_grant_binding(self):
         g = dict(
+            connectionOwnerId="o",
             ownerId="o",
             jobId="j",
             leaseToken="l",

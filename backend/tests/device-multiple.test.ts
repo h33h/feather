@@ -1,3 +1,4 @@
+import { nativeCollectionSession as validateNativeCollectionSession } from '../packages/core/src/application/native-device-session';
 import { expect, it } from 'vitest';
 import { createDatabase } from './helpers/database';
 import { DeviceCollection } from '../packages/core/src/devices/collection';
@@ -23,6 +24,7 @@ async function fixture() {
       issuerTrusted: true,
       deviceCertificate: true,
     }),
+    validateNativeCollectionSession,
   );
   return { db, raw, collection };
 }

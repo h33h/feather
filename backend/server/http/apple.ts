@@ -10,20 +10,9 @@ export async function handleApple(context: AuthenticatedContext) {
     return response(
       presentApple({ ...(await app.queries.apple(owner)), shares: await app.sharing.list(owner) }),
     );
-  if (target === 'apple/shares' && request.method === 'POST') {
-    await app.service.fresh(raw, csrf, request.headers.get('origin') ?? '', origin);
-    const data = z.object({ publicProfileId: z.string().max(64) }).parse(await body(request));
-    return response(await app.sharing.share(owner, data.publicProfileId), 201);
-  }
-  if (target.startsWith('apple/shares/') && request.method === 'POST') {
-    await app.service.fresh(raw, csrf, request.headers.get('origin') ?? '', origin);
-    const parts = target.split('/');
-    if (parts[3] === 'revoke') return response(await app.sharing.revoke(owner, parts[2]));
-    throw new Failure('NOT_FOUND', 404);
-  }
   if (target === 'apple/connect' && request.method === 'POST') {
     if (!app.connectApple) throw new Failure('APPLE_ONBOARDING_UNAVAILABLE', 503);
-    await app.service.fresh(raw, csrf, request.headers.get('origin') ?? '', origin);
+    await app.sessions.fresh(raw, csrf, request.headers.get('origin') ?? '', origin);
     const data = z
       .object({
         filename: z.string().max(255),
@@ -42,12 +31,12 @@ export async function handleApple(context: AuthenticatedContext) {
   }
   if (target === 'apple/bootstrap' && request.method === 'POST') {
     if (!app.bootstrap) throw new Failure('BOOTSTRAP_BROKER_UNAVAILABLE', 503);
-    await app.service.fresh(raw, csrf, request.headers.get('origin') ?? '', origin);
+    await app.sessions.fresh(raw, csrf, request.headers.get('origin') ?? '', origin);
     await body(request);
     return response(await app.bootstrap(owner));
   }
   if (target === 'apple/disconnect' && request.method === 'POST') {
-    await app.service.disconnect(raw, csrf, request.headers.get('origin') ?? '', origin);
+    await app.connections.disconnect(raw, csrf, request.headers.get('origin') ?? '', origin);
     return response({ ok: true });
   }
 }

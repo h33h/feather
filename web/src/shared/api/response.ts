@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 
 /** This message may be displayed by session/action/admin consumers. */
-export class ResponseDataError extends Error {
+class ResponseDataError extends Error {
   constructor(cause: unknown) {
     super('Не удалось загрузить данные. Повторите попытку.', { cause });
     this.name = 'ResponseDataError';

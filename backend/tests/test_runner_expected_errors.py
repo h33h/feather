@@ -30,7 +30,7 @@ class GuestExpectedErrorTests(unittest.TestCase):
             self.app = self.guest.GuestController(
                 Runtime(),
                 identity=self.identity,
-                evidence={k: True for k in self.guest.native.REQUIRED_ISOLATION},
+                evidence={"type": "vm", **{k: True for k in self.guest.native.REQUIRED_ISOLATION}},
                 validate_launcher_identity=lambda *args: True,
                 token=self.token,
                 audience="guest",

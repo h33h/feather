@@ -10,3 +10,16 @@ export type SigningWarning = {
   targetMinOs?: string;
 };
 export type RemovedExtension = { path: string; bundleId: string; extensionPoint: string };
+
+export type JobMaterialEnvelope = {
+  owner: string;
+  connection: string;
+  purpose: 'distribution-key';
+  secret: string;
+  aad: string;
+  wrappedKey: string;
+  nonce: string;
+  ciphertext: string;
+  tag: string;
+  generation: number;
+};

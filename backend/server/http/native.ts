@@ -5,7 +5,6 @@ import type {
   NativeQuery,
 } from '../../packages/core/src/application/native-application';
 import { profileServiceXml } from '../../packages/core/src/devices/onboarding';
-import { Failure } from '../../packages/core/src/shared';
 import type { PublicContext } from './context';
 import { body, response } from './common';
 import { nativeBearer } from './native-auth';
@@ -19,7 +18,6 @@ const named = z.object({ name: z.string().trim().min(1).max(100) });
 /** Native resources never read a cookie or fabricate browser Origin/CSRF credentials. */
 export async function handleNative({ request, target, app }: PublicContext) {
   if (!target.startsWith('native/v1/')) return null;
-  if (!app.nativeApplication) throw new Failure('NATIVE_API_UNAVAILABLE', 503);
   const raw = nativeBearer(request),
     path = target.slice('native/v1/'.length),
     p = path.split('/');

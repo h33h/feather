@@ -2,16 +2,13 @@ import { loginFixture, connectionFixture, deviceFixture } from './helpers/login'
 import { it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { createDatabase } from './helpers/database';
-import { Service } from '../packages/core/src/application/service';
+import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
 import { Vault, type Kms } from '../packages/core/src/apple/vault';
 it('envelope encryption never persists plaintext and requires current owner job lease', async () => {
   const db = await createDatabase();
   try {
-    let code = '';
     const now = 10000;
-    const s = new Service(db, {
-      now: () => now,
-    });
+    const s = new JobLifecycle(db, () => now);
     const owner = (await loginFixture(s.db, 'vault@example.invalid', s.now)).ownerId;
     const c = await connectionFixture(s.db, owner, 'TEAM-VAULT');
     const keys = new Map<string, Buffer>();
@@ -65,10 +62,7 @@ it('envelope encryption never persists plaintext and requires current owner job 
 it('rechecks tombstone after asynchronous KMS unwrap and returns no stale secret', async () => {
   const db = await createDatabase();
   try {
-    let code = '';
-    const s = new Service(db, {
-      now: () => 10000,
-    });
+    const s = new JobLifecycle(db, () => 10000);
     const owner = (await loginFixture(s.db, 'vault-race@example.invalid', s.now)).ownerId;
     const c = await connectionFixture(s.db, owner, 'TEAM-RACE');
     let key = Buffer.alloc(0);

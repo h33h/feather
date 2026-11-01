@@ -46,11 +46,19 @@ final class ProfileTests: XCTestCase {
     }
 
     func testRenewalStatusIsOptionalAndPreservesReadyIdentity() throws {
-        let legacy = try JSONDecoder().decode(ISignIdentity.self, from: Data(#"{"state":"ready","identityId":"current"}"#.utf8))
-        XCTAssertNil(legacy.renewal)
-        let renewing = try JSONDecoder().decode(ISignIdentity.self, from: Data(#"{"state":"ready","identityId":"current","renewal":{"state":"action_required","reason":"CERTIFICATE_QUOTA","futureField":true}}"#.utf8))
+        let current = try JSONDecoder().decode(ISignIdentity.self, from: Data(#"{"state":"ready","connectionId":"c","connectionGeneration":1,"teamId":"TEAM123456","identityId":"current","revision":1,"certificateSha256":"digest","expiresAt":9999999999999}"#.utf8))
+        XCTAssertNil(current.renewal)
+        let renewing = try JSONDecoder().decode(ISignIdentity.self, from: Data(#"{"state":"ready","connectionId":"c","connectionGeneration":1,"teamId":"TEAM123456","identityId":"current","revision":1,"certificateSha256":"digest","expiresAt":9999999999999,"renewal":{"identityId":"replacement","state":"action_required","reason":"CERTIFICATE_QUOTA"}}"#.utf8))
         XCTAssertEqual(renewing.state, "ready"); XCTAssertEqual(renewing.identityId, "current")
         XCTAssertEqual(renewing.renewal?.state, "action_required"); XCTAssertEqual(renewing.renewal?.reason, "CERTIFICATE_QUOTA")
+    }
+
+    func testIdentityWithoutConnectionBindingCannotBeUsedForSigning() throws {
+        let response: [String: Any] = ["state": "ready", "connectionId": "c", "connectionGeneration": 1, "teamId": "TEAM123456", "identityId": "current", "revision": 1, "certificateSha256": "digest", "expiresAt": 9999999999999]
+        for field in ["connectionId", "connectionGeneration", "teamId"] {
+            var incomplete = response; incomplete.removeValue(forKey: field)
+            XCTAssertThrowsError(try JSONDecoder().decode(ISignIdentity.self, from: JSONSerialization.data(withJSONObject: incomplete)), field)
+        }
     }
 
 }

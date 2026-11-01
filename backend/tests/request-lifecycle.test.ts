@@ -4,43 +4,15 @@ import { ReceiveDeviceCallback } from '../packages/core/src/application/receive-
 import { createRunnerAuthorizer } from '../packages/core/src/application/request-runner-authorization';
 import { Failure } from '../packages/core/src/shared/errors';
 import type { Database } from '../packages/core/src/shared/database';
-it('cancels before storage and artifact cleanup and returns the same job result', async () => {
-  const events: string[] = [];
-  const lifecycle = new RequestLifecycle(
-    { deleteAccount: vi.fn() },
-    {
-      cancel: async () => {
-        events.push('cancel');
-        return { id: 'job', state: 'cancelled', reason: null };
-      },
-    },
-    {
-      cleanup: async () => {
-        events.push('storage');
-      },
-    },
-    {
-      cleanup: async () => {
-        events.push('artifacts');
-      },
-    },
-  );
-  await expect(lifecycle.cancel('owner', 'job')).resolves.toEqual({
-    id: 'job',
-    state: 'cancelled',
-    reason: null,
-  });
-  expect(events).toEqual(['cancel', 'storage', 'artifacts']);
-});
-it('deletes the account before storage and artifact cleanup', async () => {
+it('deletes the native account before storage and artifact cleanup', async () => {
   const events: string[] = [];
   const lifecycle = new RequestLifecycle(
     {
-      deleteAccount: async () => {
+      removeProfile: async (owner: string) => {
+        expect(owner).toBe('owner');
         events.push('account');
       },
     },
-    { cancel: vi.fn() },
     {
       cleanup: async () => {
         events.push('storage');
@@ -52,7 +24,7 @@ it('deletes the account before storage and artifact cleanup', async () => {
       },
     },
   );
-  await lifecycle.deleteAccount('raw', 'csrf', 'origin', 'expected');
+  await lifecycle.deleteAccountFor('owner');
   expect(events).toEqual(['account', 'storage', 'artifacts']);
 });
 it('captures only opted-in collection failures and preserves the callback error if diagnostics fail', async () => {
@@ -61,7 +33,6 @@ it('captures only opted-in collection failures and preserves the callback error 
     throw Error('disk unavailable');
   });
   const collections = {
-    hasChallenge: async () => true,
     callback: async () => {
       throw problem;
     },
@@ -72,7 +43,7 @@ it('captures only opted-in collection failures and preserves the callback error 
   );
   expect(capture).not.toHaveBeenCalled();
   await expect(
-    new ReceiveDeviceCallback(collections, undefined, { capture }).run('challenge', packet),
+    new ReceiveDeviceCallback(collections, { capture }).run('challenge', packet),
   ).rejects.toBe(problem);
   expect(capture).toHaveBeenCalledWith('challenge', packet, 'INVALID_DEVICE_CALLBACK');
 });
@@ -88,13 +59,6 @@ it('constructs runner authorization only for a valid configured key', () => {
   expect(
     createRunnerAuthorizer({} as Database, Date.now, 'audience', 'a'.repeat(64)),
   ).toBeDefined();
-});
-it('keeps provider error identity across neutral and infrastructure imports', async () => {
-  const { ProviderError } = await import('../packages/core/src/shared/errors');
-  const { ProviderError: TransportProviderError } =
-    await import('../packages/core/src/infrastructure/config');
-  expect(ProviderError).toBe(TransportProviderError);
-  expect(new TransportProviderError('UNAVAILABLE')).toBeInstanceOf(ProviderError);
 });
 it('keeps launch retirement available without signing kickoff and discards the retired attempt afterwards', async () => {
   const { SigningExecution } = await import('../packages/core/src/application/signing-execution');

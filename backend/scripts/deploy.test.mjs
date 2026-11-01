@@ -15,12 +15,18 @@ function runDeploy(mode) {
   const bin = path.join(root, 'bin');
   mkdirSync(bin);
   const environment = 'POSTGRES_IMAGE=postgres@sha256:existing\nWEB_IMAGE=old-web\n';
-  let compose =
-    'services:\n  web:\n    command: [node, --import, tsx, scripts/personal-start.ts]\n    tmpfs: ["/tmp:size=123", "/app/apps/web/.next/cache:size=456"]\n    env_file: [personal.env]\n    ports: ["127.0.0.1:3080:3000"]\n';
-  if (mode === 'current-layout')
-    compose = compose
-      .replace('scripts/personal-start.ts', 'backend/scripts/personal-start.ts')
-      .replace('/app/apps/web/.next/cache', '/app/web/.next/cache');
+  const command = ['node', '--import', 'tsx', 'backend/scripts/personal-start.ts'];
+  const cache = '/app/web/.next/cache:size=456';
+  const compose =
+    'services:\n  web:\n    command: [node, --import, tsx, backend/scripts/personal-start.ts]\n    tmpfs: ["/tmp:size=123", "/app/web/.next/cache:size=456"]\n    env_file: [personal.env]\n    ports: ["127.0.0.1:3080:3000"]\n';
+  const resolved = {
+    services: {
+      web: {
+        command: mode === 'unsupported-command' ? ['node', 'other-start.ts'] : command,
+        tmpfs: ['/tmp:size=123', mode === 'unsupported-cache' ? '/other/cache:size=456' : cache],
+      },
+    },
+  };
   writeFileSync(path.join(root, '.env'), environment);
   writeFileSync(path.join(root, 'compose.yml'), compose);
   writeFileSync(path.join(root, 'image.tar.gz'), 'fixture');
@@ -40,6 +46,10 @@ case "$*" in
   'image ls --no-trunc --format {{.ID}} {{.ID}} isign-web')
     printf '%s\\n' 'old-image old-image' 'stale-image stale-image' ;;
   *'config --quiet'*) [ "$DEPLOY_TEST_MODE" != invalid-config ] ;;
+  *'config --format json'*) printf '%s' '${JSON.stringify(resolved)}' ;;
+  'run --rm --interactive --network none --read-only --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --entrypoint node '*)
+    while [ "$1" != --eval ]; do shift; done
+    exec '${process.execPath}' "$@" ;;
   *'up --no-deps --detach --pull never --wait --wait-timeout 120 web'*)
     [ "$DEPLOY_TEST_MODE" != failed-start ] || [ "\${WEB_IMAGE:-}" = old-image ] || exit 1
     printf '%s' "\${WEB_IMAGE:-${image}}" > "$DEPLOY_TEST_ROOT/running-image" ;;
@@ -107,22 +117,22 @@ test('healthy deployment persists the image without dropping database settings',
   assert.equal(result.environment, `POSTGRES_IMAGE=postgres@sha256:existing\nWEB_IMAGE=${image}\n`);
 });
 
-test('deployment upgrades runtime paths while preserving operator Compose settings', () => {
+test('deployment preserves the current operator Compose settings unchanged', () => {
   const result = runDeploy('success');
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(
-    result.compose,
-    result.originalCompose
-      .replace('scripts/personal-start.ts', 'backend/scripts/personal-start.ts')
-      .replace('/app/apps/web/.next/cache', '/app/web/.next/cache'),
-  );
-});
-
-test('a repeated deployment keeps the current runtime paths unchanged', () => {
-  const result = runDeploy('current-layout');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.compose, result.originalCompose);
 });
+
+for (const mode of ['unsupported-command', 'unsupported-cache']) {
+  test(`${mode} never restarts or rewrites the operator configuration`, () => {
+    const result = runDeploy(mode);
+    assert.notEqual(result.status, 0);
+    assert.equal(result.environment, result.original);
+    assert.equal(result.compose, result.originalCompose);
+    assert.match(result.stderr, /Compose web runtime must use/);
+    assert.doesNotMatch(result.log, /up --no-deps/);
+  });
+}
 
 test('deployment probes runtime readiness with the canonical Host header', () => {
   const result = runDeploy('success');

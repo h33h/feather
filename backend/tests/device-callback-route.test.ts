@@ -1,13 +1,13 @@
+import { nativeCollectionSession as validateNativeCollectionSession } from '../packages/core/src/application/native-device-session';
+import { DeviceCollection } from '../packages/core/src/devices/collection';
 import { ReceiveDeviceCallback } from '../packages/core/src/application/receive-device-callback';
-import { RequestAuthorization } from '../packages/core/src/application/request-authorization';
-import { InstallationHistory } from '../packages/core/src/library/installation-history';
 import { ownAuthority } from './helpers/seed-authority';
 import { afterEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { createDatabase } from './helpers/database';
 import { DeviceOnboarding } from '../packages/core/src/devices/onboarding';
 import { hash } from '../packages/core/src/shared/index';
-import { Service } from '../packages/core/src/application/service';
+import { SessionService } from '../packages/core/src/auth/sessions';
 const state = vi.hoisted(() => ({ app: null as unknown }));
 vi.mock('../server/runtime', () => ({
   origin: 'https://synthetic.invalid',
@@ -41,6 +41,11 @@ async function fixture(trusted = true) {
       },
     },
     () => 100,
+  );
+  const collections = new DeviceCollection(
+    db,
+    devices,
+    () => 100,
     async () => ({
       challenge: current,
       udid: 'A'.repeat(40),
@@ -48,18 +53,17 @@ async function fixture(trusted = true) {
       issuerTrusted: trusted,
       deviceCertificate: trusted,
     }),
+    validateNativeCollectionSession,
   );
   await ownAuthority(db);
-  current = (await devices.challenge('owner', 'conn', 's'.repeat(43))).challenge;
-  const service = new Service(db, { now: () => 100 });
-  const callback = new ReceiveDeviceCallback(undefined, devices);
+  current = (await collections.challenge('owner', 's'.repeat(43))).challenge;
+  const service = new SessionService(db, { now: () => 100 });
+  const callback = new ReceiveDeviceCallback(collections);
   state.app = {
     devices,
-    service,
+    sessions: service,
     capabilities: { deviceEnrollment: true },
     receiveDeviceCallback: callback.run.bind(callback),
-    authorization: new RequestAuthorization(db, () => 100),
-    history: new InstallationHistory(db, () => 100),
   };
   return { db, current };
 }
@@ -78,9 +82,8 @@ it('trusted callback saves UDID then returns Safari without installing a second 
   expect(result.headers.get('cache-control')).toBe('no-store');
   expect(result.headers.get('referrer-policy')).toBe('no-referrer');
   expect(await result.text()).toBe('');
-  expect((await h.db.query<{ status: string }>('SELECT status FROM devices')).rows[0].status).toBe(
-    'collected',
-  );
+  expect((await h.db.query('SELECT id FROM collected_devices')).rows).toHaveLength(1);
+  expect((await h.db.query('SELECT id FROM devices')).rows).toHaveLength(0);
   expect((await h.db.query('SELECT * FROM device_registration_operations')).rows).toHaveLength(0);
   const replay = await POST(callback(h.current, Buffer.from('replay')));
   expect(replay.status).toBe(410);
@@ -91,8 +94,11 @@ it('untrusted CMS and oversized callbacks never consume provenance nonce', async
   expect((await POST(callback(h.current, Buffer.from('UNTRUSTED')))).status).toBe(400);
   expect((await POST(callback(h.current, Buffer.alloc(65537)))).status).toBe(413);
   expect(
-    (await h.db.query<{ consumed_at: number | null }>('SELECT consumed_at FROM device_challenges'))
-      .rows[0].consumed_at,
+    (
+      await h.db.query<{ consumed_at: number | null }>(
+        'SELECT consumed_at FROM device_collection_challenges',
+      )
+    ).rows[0].consumed_at,
   ).toBeNull();
   expect((await h.db.query('SELECT * FROM devices')).rows).toHaveLength(0);
 });

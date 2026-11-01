@@ -26,7 +26,6 @@ MODULES = {
     "material_prepare": "guest/material_prepare.py",
     "bootstrap": "guest/bootstrap.py",
     "bootstrap_sealing": "guest/bootstrap_sealing.py",
-    "device_cms": "guest/device_cms.py",
     "guest_runtime": "guest/runtime.py",
     "linux_runtime": "guest/linux_runtime.py",
     "guest_controller": "guest/controller.py",

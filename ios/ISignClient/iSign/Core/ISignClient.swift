@@ -19,7 +19,7 @@ enum ISignSigningAuthority {
     static func isMaterial(_ key: String) -> Bool { ["bundle", "bundle-history", "profile-request"].contains(key) || key.hasPrefix("profiles:") }
 }
 @MainActor final class ISignClient {
-    private(set) var server: URL
+    let server: URL
     private(set) var generation = UUID()
     private(set) var signingGeneration = UUID()
     var signingScope: ISignSigningScope { .init(generation: generation, authority: signingGeneration) }
@@ -39,11 +39,11 @@ enum ISignSigningAuthority {
         if let saved = try vault.read("session") {
             if let session = try? JSONDecoder().decode(Saved.self, from: saved), session.server == server.absoluteString {
                 owner = session.owner; tokens = session.tokens
-                signingCacheInvalidated = session.signingInvalidated ?? false
+                signingCacheInvalidated = session.signingInvalidated
             } else { try vault.clear() }
         } else { try vault.clear() }
     }
-    private struct Saved: Codable { let server: String; let owner: ISignOwner; let tokens: ISignTokens; let signingInvalidated: Bool? }
+    private struct Saved: Codable { let server: String; let owner: ISignOwner; let tokens: ISignTokens; let signingInvalidated: Bool }
     private func saveSession(tokens: ISignTokens, owner: ISignOwner) throws {
         try vault.write(JSONEncoder().encode(Saved(server: server.absoluteString, owner: owner, tokens: tokens, signingInvalidated: signingCacheInvalidated)), key: "session")
     }
@@ -82,12 +82,6 @@ enum ISignSigningAuthority {
         onClear?()
         try vault.clear()
     }
-    func resetManaged() throws {
-        let savedTokens = tokens, savedOwner = owner
-        try clear()
-        if let savedTokens, let savedOwner { try install(tokens: savedTokens, owner: savedOwner) }
-    }
-    func changeServer(_ server: URL) throws { try Self.validate(server); try clear(); self.server = server }
     func accessToken() async throws -> String {
         let stamp = generation
         guard let token = tokens else { throw ISignFailure(code: "AUTH_REQUIRED") }
@@ -150,14 +144,6 @@ enum ISignSigningAuthority {
         return value
     }
     func publicRequest<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T { try await JSONDecoder().decode(T.self, from: raw(path, method: "POST", body: body, authenticated: false)) }
-    func fetchAndCache(_ path: String, key: String, method: String = "GET", body: [String: Any]? = nil) async throws {
-        let stamp = generation, authority = signingScope
-        let data = try await raw(path, method: method, body: body)
-        try check(stamp)
-        if path.hasPrefix("signing/") || ISignSigningAuthority.isMaterial(key) { try checkSigning(authority) }
-        if ISignSigningAuthority.isMaterial(key) { try cacheSigning(data, key: key, scope: authority) }
-        else { try cache(data, key: key, generation: stamp) }
-    }
     func cache(_ data: Data, key: String, generation: UUID) throws {
         try check(generation)
         guard owner != nil else { throw ISignFailure(code: "AUTH_REQUIRED") }

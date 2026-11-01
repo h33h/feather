@@ -20,11 +20,9 @@ const responseSchema = z
 /** Generic authenticated requests, fresh authentication and action feedback. */
 export function useSession({
   onReset,
-  onMutation,
   onRefresh,
 }: {
   onReset?: () => void;
-  onMutation?: (path: string) => void;
   onRefresh?: () => Promise<void>;
 } = {}) {
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -39,10 +37,10 @@ export function useSession({
     actionVersion = useRef(0);
   const authenticatedSession = useRef<AuthSession | null>(null);
   const sessionRequest = useRef<Promise<AuthSession | null> | null>(null);
-  const callbacks = useRef({ onReset, onMutation, onRefresh });
+  const callbacks = useRef({ onReset, onRefresh });
   useEffect(() => {
-    callbacks.current = { onReset, onMutation, onRefresh };
-  }, [onReset, onMutation, onRefresh]);
+    callbacks.current = { onReset, onRefresh };
+  }, [onReset, onRefresh]);
   const reset = useCallback(() => {
     generation.current++;
     actionVersion.current++;
@@ -58,11 +56,11 @@ export function useSession({
     callbacks.current.onReset?.();
   }, []);
   const api: Api = useCallback(
-    async (path, data, options) => {
+    async (path, data) => {
       const requestEpoch = generation.current;
-      const send: Api = async (endpoint, payload, opts) => {
+      const send: Api = async (endpoint, payload) => {
         const epoch = generation.current;
-        const method = opts?.method ?? (payload === undefined ? 'GET' : 'POST');
+        const method = payload === undefined ? 'GET' : 'POST';
         const response = await fetch('/api/' + endpoint, {
           method,
           headers:
@@ -83,12 +81,11 @@ export function useSession({
         }
         if (epoch === generation.current) {
           if (typeof value.csrf === 'string') csrf.current = value.csrf;
-          if (method !== 'GET') callbacks.current.onMutation?.(endpoint);
         }
         return value;
       };
       try {
-        return await send(path, data, options);
+        return await send(path, data);
       } catch (problem) {
         if (requestEpoch !== generation.current) throw problem;
         if (
@@ -102,7 +99,7 @@ export function useSession({
         } finally {
           setNotice('');
         }
-        return send(path, data, options);
+        return send(path, data);
       }
     },
     [reset],
@@ -204,13 +201,10 @@ export function useSession({
     error,
     notice,
     setError,
-    setNotice,
     api,
     action,
     logout,
-    reloadSession,
     generation,
     isAuthenticated,
-    retry: () => action(async () => {}),
   };
 }

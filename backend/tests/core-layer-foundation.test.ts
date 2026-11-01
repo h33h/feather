@@ -11,7 +11,6 @@ it('keeps runner contracts and canonical encoding neutral and composition outsid
     'shared/runner-contracts.ts',
     'shared/canonical-json.ts',
     'infrastructure/broker-rpc.ts',
-    'infrastructure/cms-rpc.ts',
     'infrastructure/collection-cms.ts',
     'composition/personal-kernel.ts',
     'composition/signing-runtime.ts',

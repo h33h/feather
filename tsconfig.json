@@ -3,6 +3,8 @@
     "target": "ES2022",
     "lib": ["dom", "dom.iterable", "es2022"],
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "module": "esnext",

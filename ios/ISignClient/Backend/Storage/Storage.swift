@@ -23,10 +23,12 @@ final class Storage: ObservableObject {
 				URL(fileURLWithPath: "/dev/null")
 		}
 		
-		container.persistentStoreDescriptions.first?.shouldMigrateStoreAutomatically = true
-		container.persistentStoreDescriptions.first?.shouldInferMappingModelAutomatically = true
+		container.persistentStoreDescriptions.first?.shouldMigrateStoreAutomatically = false
+		container.persistentStoreDescriptions.first?.shouldInferMappingModelAutomatically = false
 
-		_loadPersistentStoreAggressively()
+		container.loadPersistentStores { _, error in
+			if let error { fatalError("Core Data store unavailable: \(error)") }
+		}
 		container.viewContext.automaticallyMergesChangesFromParent = true
 		container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
 	}
@@ -53,38 +55,4 @@ final class Storage: ObservableObject {
 		return "\((try? context.count(for: request)) ?? 0)"
 	}
 
-	private func _loadPersistentStoreAggressively() {
-		container.loadPersistentStores { description, error in
-			if error != nil {
-				self._destroyStore(at: description.url)
-				self.container.loadPersistentStores { _, error in
-					if let error {
-						fatalError("Core Data unrecoverable: \(error)")
-					}
-				}
-			}
-		}
-	}
-
-	private func _destroyStore(at url: URL?) {
-		guard let url else { return }
-
-		let base = url.deletingPathExtension()
-		let fm = FileManager.default
-
-		let files = [
-			base.appendingPathExtension("sqlite"),
-			base.appendingPathExtension("sqlite-wal"),
-			base.appendingPathExtension("sqlite-shm")
-		]
-
-		for file in files {
-			try? fm.removeItem(at: file)
-		}
-		
-		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.signed)
-		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.unsigned)
-		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.certificates)
-		UserDefaults.standard.set(0, forKey: "feather.selectedCert")
-	}
 }

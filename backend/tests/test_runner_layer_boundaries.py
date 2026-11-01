@@ -95,12 +95,12 @@ def probe(root, script):
 class RunnerLayerBoundaryTests(unittest.TestCase):
     def test_scanner_tracks_function_local_relative_and_dynamic_imports(self):
         targets = imported_modules(
-            "def factory():\n import guest.device_cms\n from . import codec\n"
+            "def factory():\n import guest.analyzer\n from . import codec\n"
             " __import__('controller.broker')\n importlib.import_module('protocol.stdio')\n",
             "protocol.example",
         )
         self.assertTrue(
-            {"guest.device_cms", "protocol.codec", "controller.broker", "protocol.stdio"} <= targets
+            {"guest.analyzer", "protocol.codec", "controller.broker", "protocol.stdio"} <= targets
         )
 
     def test_direction_guard_rejects_bare_runtime_imports_and_package_initializers(self):
@@ -182,7 +182,7 @@ class RunnerLayerBoundaryTests(unittest.TestCase):
                 )
         self.assertEqual(violations, [])
 
-    def test_controller_cms_factory_works_without_guest_distribution(self):
+    def test_controller_imports_without_guest_distribution(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = pathlib.Path(temporary)
             for package in ("controller", "protocol", "verification_core"):
@@ -192,19 +192,9 @@ class RunnerLayerBoundaryTests(unittest.TestCase):
             probe(
                 output,
                 """
-import hashlib, importlib, pathlib
+import importlib, pathlib
 for path in (pathlib.Path(sys.argv[1]) / 'controller').glob('*.py'):
     importlib.import_module('controller.' + path.stem)
-from controller.personal_deployment import device_cms_verifier
-root = pathlib.Path(sys.argv[1]).resolve()
-ca = root / 'public-ca.pem'
-ca.write_bytes(b'public trust fixture')
-config = {'deviceCms': {'caFile': str(ca), 'caSha256': hashlib.sha256(ca.read_bytes()).hexdigest(),
-    'opensslPath': '/usr/bin/openssl', 'issuerDn': 'CN=Configured CA',
-    'udidSubjectAttribute': 'CN', 'policyId': 'configured-policy'}}
-verifier = device_cms_verifier(config, root)
-assert verifier.policy_id == 'configured-policy'
-assert verifier.ca_sha256 == config['deviceCms']['caSha256']
 assert not any(name == 'guest' or name.startswith('guest.') for name in sys.modules)
 """,
             )
@@ -228,7 +218,6 @@ from protocol.digests import canonical_digest
 from protocol.framing import read_frame, write_frame
 from protocol.limits import ARTIFACT_BATCH_LIMIT, ARTIFACT_SLICE_BYTES
 from verification_core.certificates import one_pem_certificate
-from verification_core.device_cms import DeviceCMSVerifier, DeviceLeafPolicy
 assert canonical({'é': 1, 'a': False}) == b'{"a":false,"\\xc3\\xa9":1}'
 assert canonical_digest({'é': 1, 'a': False}) == hashlib.sha256(b'{"a":false,"\\xc3\\xa9":1}').hexdigest()
 stream = io.BytesIO()

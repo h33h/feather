@@ -22,7 +22,7 @@ beforeEach(() => {
   view.mockResolvedValue({ operationId: 'operation', jobId: 'job', state: 'ready' });
   ticket.mockResolvedValue({ ticket: 'a'.repeat(43), expiresAt: 10000 });
   state.app = {
-    service: { session, authorizeWrite: write, fresh },
+    sessions: { session, authorizeWrite: write, fresh },
     clientInstaller: {
       release: async () => ({
         name: 'iSign Client',
@@ -139,7 +139,7 @@ it('enforces persisted cookie sessions, CSRF and ten-minute freshness on the ins
     login = await loginFixture(db, 'route-owner', 1000);
   let now = 1000;
   const service = new SessionService(db, { now: () => now });
-  state.app = { ...(state.app as object), service };
+  state.app = { ...(state.app as object), sessions: service };
   const input = { deviceId: 'device', key: 'authenticated' };
   expect((await handle(request('client/install', 'POST', input))).status).toBe(401);
   const headers = { cookie: '__Host-isign-session=' + login.token, 'x-isign-csrf': login.csrf };

@@ -7,7 +7,7 @@ import { AppleProvisioningApi } from '../apple/provisioning-client';
 import type { AppleRequestPort } from '../apple/request-port';
 import type { BootstrapLease, parseTeamKey } from '../apple/onboarding';
 import type { ExecutorGrant } from '../shared/runner-contracts';
-import type { EligibilityBinding } from '../devices/eligibility';
+import type { AppleAccess } from '../apple/access';
 export type AppleClientFactory = (
   key: { issuerId: string; keyId: string; privateKey: KeyObject },
   guard: () => Promise<void>,
@@ -89,7 +89,7 @@ export class AppleClientCredentials {
       secret_ref: string;
     }>(
       'SELECT issuer_id,key_id,secret_ref FROM connections WHERE id=$1 AND owner_id=$2 AND generation=$3',
-      [grant.connectionId, grant.connectionOwnerId ?? grant.ownerId, grant.connectionGeneration],
+      [grant.connectionId, grant.connectionOwnerId, grant.connectionGeneration],
     );
     if (!row.rows[0]?.secret_ref) throw new Failure('SECRET_UNAVAILABLE', 404);
     const p8 = await this.vault.openForJob(
@@ -115,7 +115,7 @@ export class AppleClientCredentials {
     }
   }
   async ready(
-    binding: EligibilityBinding,
+    binding: AppleAccess,
     probe?: (
       resourceId: string,
       udid: string,

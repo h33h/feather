@@ -2,6 +2,7 @@ import math, re, time
 
 BINDINGS = (
     "ownerId",
+    "connectionOwnerId",
     "jobId",
     "leaseToken",
     "connectionId",
@@ -18,7 +19,7 @@ def reject(code):
     raise ValueError(code)
 
 
-OPTIONAL_BINDINGS = ("connectionOwnerId", "accessGrantId", "accessGrantGeneration")
+OPTIONAL_BINDINGS = ("accessGrantId", "accessGrantGeneration")
 
 
 def binding_fields(grant):
@@ -30,6 +31,7 @@ def validate_grant(grant, now=None):
         reject("ISOLATION_GRANT_REQUIRED")
     for k in (
         "ownerId",
+        "connectionOwnerId",
         "jobId",
         "leaseToken",
         "connectionId",
@@ -45,18 +47,18 @@ def validate_grant(grant, now=None):
         or not re.fullmatch("[a-f0-9]{64}", str(grant["uploadDigest"]))
     ):
         reject("GRANT_INVALID")
-    if any(k in grant for k in OPTIONAL_BINDINGS):
+    shared = grant["connectionOwnerId"] != grant["ownerId"]
+    if shared:
         if (
             not all(k in grant for k in OPTIONAL_BINDINGS)
-            or not isinstance(grant["connectionOwnerId"], str)
-            or not grant["connectionOwnerId"]
-            or grant["connectionOwnerId"] == grant["ownerId"]
             or not isinstance(grant["accessGrantId"], str)
             or not grant["accessGrantId"]
             or type(grant["accessGrantGeneration"]) is not int
             or grant["accessGrantGeneration"] < 1
         ):
             reject("GRANT_ACCESS_INVALID")
+    elif any(k in grant for k in OPTIONAL_BINDINGS):
+        reject("GRANT_ACCESS_INVALID")
     if (
         type(grant["expiresAt"]) is not int
         or not math.isfinite(grant["expiresAt"])

@@ -29,7 +29,7 @@ class BrokerTests(unittest.TestCase):
                 return {
                     "id": "isign-0123456789abcdef",
                     "expiresAt": parent.now + request["maxRuntimeMs"],
-                    "evidence": {k: True for k in parent.m.REQUIRED_ISOLATION},
+                    "evidence": {"type": "vm", **{k: True for k in parent.m.REQUIRED_ISOLATION}},
                 }
 
             def verify_instance(self, handle, request):
@@ -123,6 +123,7 @@ class BrokerTests(unittest.TestCase):
 
     def grant(self):
         return {
+            "connectionOwnerId": "o",
             "ownerId": "o",
             "jobId": "j",
             "leaseToken": "l",
@@ -395,7 +396,7 @@ class BrokerTests(unittest.TestCase):
     def test_foreign_owner_source_digest_and_wrong_plan(self):
         self.launch()
         self.source()
-        grant = dict(self.grant(), ownerId="foreign")
+        grant = dict(self.grant(), ownerId="foreign", connectionOwnerId="foreign")
         self.assertEqual(
             self.request("/v1/instances/isign-0123456789abcdef/analyze", {"grant": grant})[0], 403
         )
@@ -426,7 +427,7 @@ class BrokerTests(unittest.TestCase):
         self.assertTrue(result["report"]["value"]["executorReady"])
         self.assertNotIn("launch", self.calls)
 
-    def test_control_caps_not_faked_and_bound_device_cms(self):
+    def test_control_caps_are_not_faked(self):
         self.assertEqual(
             self.request(
                 "/v1/control/capabilities",
@@ -434,32 +435,6 @@ class BrokerTests(unittest.TestCase):
             )[0],
             503,
         )
-        self.server.device_cms_verifier = lambda data: {
-            "challenge": "challenge",
-            "udid": "0" * 40,
-            "product": "iPhone15,2",
-            "version": "18.0",
-            "signatureVerified": True,
-            "issuerTrusted": True,
-            "deviceCertificate": "a" * 64,
-        }
-        self.server.device_cms_verifier.policy_id = "test-policy"
-        self.server.device_cms_verifier.ca_sha256 = "b" * 64
-        import base64
-
-        body = {
-            "binding": {"nonce": "device-nonce"},
-            "payload": {
-                "cmsBase64": base64.b64encode(b"SYNTHETIC-CMS").decode(),
-                "policyId": "test-policy",
-                "caSha256": "b" * 64,
-            },
-            "audience": "test-audience",
-        }
-        status, result = self.request("/v1/control/device-cms", body)
-        self.assertEqual(status, 200)
-        self.assertEqual(result["report"]["binding"], body["binding"])
-        self.assertEqual(result["report"]["value"]["payload"]["udid"], "0" * 40)
 
     def test_failed_destroy_can_retry_without_reopening_resource(self):
         self.launch()

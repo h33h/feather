@@ -3,7 +3,7 @@ import type { ExecutorGrant, VerifiedReport } from '../shared/runner-contracts';
 import { canonicalReport } from '../shared/canonical-json';
 import type { ExecutorProvider } from '../signing/executor-provider';
 import type { AnalysisVm, AnalysisReport } from '../signing/pipeline';
-import { Failure, token } from '../shared/index';
+import { Failure } from '../shared/index';
 // Public IPA failures emitted only by the broker after guest response verification.
 export const EXPECTED_RUNNER_FAILURE_CODES = [
   'SOURCE_LIMIT',
@@ -194,7 +194,8 @@ export class HttpRunnerProvider implements ExecutorProvider {
     return this.trusted.has(vm);
   }
   async launch(input: Parameters<ExecutorProvider['launch']>[0]): Promise<AnalysisVm> {
-    const nonce = input.launchNonce ?? token();
+    const nonce = input.launchNonce;
+    if (!/^[A-Za-z0-9_-]{43}$/.test(nonce)) throw new Failure('EXECUTOR_LAUNCH_NONCE_INVALID');
     const launched = await this.json(
       '/v1/instances',
       {

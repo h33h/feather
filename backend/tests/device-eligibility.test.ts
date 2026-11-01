@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash, X509Certificate } from 'node:crypto';
 import { createDatabase } from './helpers/database';
-import { BOOTSTRAP_SCHEMA } from '../packages/core/src/apple/bootstrap-store';
 import {
   DeviceEligibilityProbe,
   type DeviceEligibilityApi,
@@ -14,7 +13,7 @@ import {
   type ControlResource,
 } from '../packages/core/src/devices/eligibility';
 import { hash } from '../packages/core/src/shared/index';
-const binding = { ownerId: 'o', connectionId: 'c', generation: 1 },
+const binding = { ownerId: 'o', connectionOwnerId: 'o', connectionId: 'c', generation: 1 },
   udid = 'A'.repeat(40);
 async function fixture() {
   const temp = mkdtempSync(join(tmpdir(), 'isign-eligibility-fixture-'));
@@ -46,7 +45,6 @@ async function fixture() {
   const cert = new X509Certificate(pem);
   const now = Date.parse(cert.validFrom) + 1000;
   const db = await createDatabase();
-  await db.query(BOOTSTRAP_SCHEMA);
   await db.query("INSERT INTO users(id,login_name,created_at) VALUES('o','o@test.example',1)");
   await db.query(
     "INSERT INTO connections(id,owner_id,team_id,state,provider) VALUES('c','o','ABCDEFGHIJ','ready','asc')",

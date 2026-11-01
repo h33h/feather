@@ -26,7 +26,6 @@ export const operationLabels: Record<string, string> = {
   failed: 'Не удалось подготовить клиент',
   cancelled: 'Подготовка отменена',
 };
-export const terminal = (state: string) => ['ready', 'failed', 'cancelled'].includes(state);
 export const installationErrors: Record<string, string> = {
   CLIENT_RELEASE_UNAVAILABLE: 'Версия клиента ещё не опубликована.',
   CLIENT_RELEASE_CHANGED: 'Сборка клиента обновилась. Начните подготовку заново.',

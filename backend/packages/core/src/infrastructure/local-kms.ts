@@ -1,7 +1,8 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { ProviderError, requireServer } from './config';
+import { requireServer } from './config';
+import { ProviderError } from '../shared/errors';
 import type { Kms } from '../apple/vault';
 /** Secret validity/deletion is enforced by Vault's database guards, not a restore ledger. */
 export class LocalEnvelopeKms implements Kms {

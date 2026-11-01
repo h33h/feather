@@ -205,15 +205,6 @@ import CryptoKit
         guard digest == bundle.certificateSha256.lowercased() else { throw ISignFailure(code: "CERTIFICATE_MISMATCH") }
     }
     func logout() async { await client?.logout() }
-    func exportCertificate(using template: String, generation: UUID) throws {
-        let client = try requireClient(); try client.check(generation)
-        guard let bundle = try cachedBundle(), template.contains("$(BASE64_CERT)"), template.contains("$(PASSWORD)") else { throw ISignFailure(code: "INVALID_EXPORT_REQUEST") }
-        let placeholder = template.replacingOccurrences(of: "$(BASE64_CERT)", with: "certificate").replacingOccurrences(of: "$(PASSWORD)", with: "password")
-        guard let target = URL(string: placeholder), let scheme = target.scheme, !["http", "https", "file", "data", "javascript", "isign-feather"].contains(scheme.lowercased()) else { throw ISignFailure(code: "EXTERNAL_APP_CALLBACK_REQUIRED") }
-        var allowed = CharacterSet.urlQueryAllowed; allowed.remove(charactersIn: ";/?:@&=+$, ")
-        guard let p12 = bundle.p12.addingPercentEncoding(withAllowedCharacters: allowed), let password = bundle.password.addingPercentEncoding(withAllowedCharacters: allowed), let callback = URL(string: template.replacingOccurrences(of: "$(BASE64_CERT)", with: p12).replacingOccurrences(of: "$(PASSWORD)", with: password)) else { throw ISignFailure(code: "INVALID_EXPORT_REQUEST") }
-        UIApplication.shared.open(callback)
-    }
     func syncSources(_ sources: [ISignSource], stamp: UUID) async throws {
         let client = try requireClient()
         var feeds: [(ISignSource, ASRepository)] = []

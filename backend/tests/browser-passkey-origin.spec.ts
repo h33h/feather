@@ -34,8 +34,18 @@ test('browser passkey registration is cryptographically verified against the con
         ? {
             json: {
               csrf: 'csrf',
-              profile: { id: 'invited', loginName: 'invited', role: 'user' },
-              capabilities: { runner: false },
+              profile: {
+                id: 'invited',
+                loginName: 'invited',
+                role: 'user',
+                publicProfileId: 'profile-invited',
+              },
+              capabilities: {
+                runner: false,
+                appleOnboarding: true,
+                bootstrap: true,
+                deviceEnrollment: true,
+              },
               authenticated: true,
             },
           }

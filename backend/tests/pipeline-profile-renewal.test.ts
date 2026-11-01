@@ -11,7 +11,7 @@ it('renews only a publicly expired own exact profile and reuses stable revision 
     );
     await ownAuthority(db);
     const renewal = new ProfileRenewal({ db, now: () => 10000 });
-    const binding = { ownerId: 'o', connectionId: 'c', generation: 1 };
+    const binding = { ownerId: 'o', connectionOwnerId: 'o', connectionId: 'c', generation: 1 };
     const found = new Map([
       [
         'own-base',
@@ -62,7 +62,7 @@ it('does not invent profile validity or change revision from browser-like resour
     const renewal = new ProfileRenewal({ db, now: () => 10000 });
     await expect(
       renewal.chooseName(
-        { ownerId: 'o', connectionId: 'c', generation: 1 },
+        { ownerId: 'o', connectionOwnerId: 'o', connectionId: 'c', generation: 1 },
         'own',
         'bundle',
         async () => [{ id: 'bad', attributes: { name: 'own', expirationDate: 'unknown' } }],
@@ -71,7 +71,7 @@ it('does not invent profile validity or change revision from browser-like resour
     ).rejects.toThrow('PROFILE_EXPIRY_UNKNOWN');
     await expect(
       renewal.chooseName(
-        { ownerId: 'o', connectionId: 'c', generation: 1 },
+        { ownerId: 'o', connectionOwnerId: 'o', connectionId: 'c', generation: 1 },
         'own',
         'bundle',
         async () => [

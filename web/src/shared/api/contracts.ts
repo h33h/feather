@@ -1,9 +1,15 @@
-// Compatibility entrypoint for browser consumers. DTO ownership is neutral.
-export * from '../../../../backend/packages/contracts/src/index';
+// Browser contracts share their DTO ownership with the server.
+export {
+  appleSchema,
+  devicesSchema,
+  sessionSchema,
+  type AppleData,
+  type AuthSession,
+  type DeviceData,
+} from '../../../../backend/packages/contracts/src/index';
 export type Api = (
   path: string,
   data?: unknown,
-  options?: { method?: 'POST' | 'PUT' | 'DELETE' },
 ) => Promise<{
   profileXml?: string;
   expiresAt?: number;

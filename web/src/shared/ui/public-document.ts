@@ -3,13 +3,7 @@ import { themeScript } from './theme';
 
 export type PublicStateCopy = { title: string; message: string; actionLabel: string };
 
-export const offlineCopy: PublicStateCopy = {
-  title: 'Нет подключения',
-  message: 'Подключитесь к Wi-Fi или мобильной сети, чтобы продолжить установку iSign Client.',
-  actionLabel: 'Повторить',
-};
-
-// This stylesheet also generates public.css and the self-contained offline document.
+// This stylesheet also generates public.css for shared public states.
 export const publicSurfaceCss = `
 body:has(.public-shell) { margin: 0; background: var(--color-surface); }
 .store.public-shell {

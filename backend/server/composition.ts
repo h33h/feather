@@ -2,7 +2,7 @@ import { ClientInstallations } from '../packages/core/src/application/client-ins
 import { LocalClientRelease } from '../packages/core/src/infrastructure/client-release';
 import { Failure } from '../packages/core/src/shared/errors';
 import { ConnectApple } from '../packages/core/src/application/connect-apple';
-import { createNativeAuth } from '../packages/core/src/composition/native-runtime';
+import { NativeSessions } from '../packages/core/src/auth/native-sessions';
 import { NativeApplication } from '../packages/core/src/application/native-application';
 import { nativeCollectionSession } from '../packages/core/src/application/native-device-session';
 import { FeatherSigningAssets } from '../packages/core/src/feather/signing-assets';
@@ -11,11 +11,9 @@ import { FeatherCatalog } from '../packages/core/src/catalog/feather-feed';
 import { denyControlProfile } from '../packages/core/src/devices/eligibility';
 import { ProfileDiagnostics } from '../packages/core/src/devices/profile-diagnostics';
 import { createRunnerAuthorizer } from '../packages/core/src/application/request-runner-authorization';
-import { InstallationHistory } from '../packages/core/src/library/installation-history';
 import { ReceiveDeviceCallback } from '../packages/core/src/application/receive-device-callback';
 import { RequestLifecycle } from '../packages/core/src/application/request-lifecycle';
 import { RequestAuthorization } from '../packages/core/src/application/request-authorization';
-import { JobRequests } from '../packages/core/src/application/job-requests';
 import { ReceiveUpload } from '../packages/core/src/application/receive-upload';
 import { RuntimeReadiness } from '../packages/core/src/application/runtime-readiness';
 import { SigningReadiness } from '../packages/core/src/application/signing-readiness';
@@ -32,17 +30,15 @@ import { AppleSharing } from '../packages/core/src/apple/access';
 import { createPersonalRuntimeKernel } from '../packages/core/src/composition/personal-kernel';
 import { BootstrapRenewal } from '../packages/core/src/apple/bootstrap-renewal';
 import { Tickets } from '../packages/core/src/library/tickets';
-import { Importer } from '../packages/core/src/catalog/importer';
 import { providerRequest, boundedResponseText } from '../packages/core/src/infrastructure/config';
 import { AppleClient, appleJwt } from '../packages/core/src/infrastructure/apple-api';
 import { AppleOnboarding, DatabaseOnboardingPort } from '../packages/core/src/apple/onboarding';
-import { deviceCmsRpc } from '../packages/core/src/infrastructure/cms-rpc';
 import { DeviceOnboarding } from '../packages/core/src/devices/onboarding';
 import { QueuedDispatcher } from '../packages/core/src/signing/queued-dispatcher';
 import { ProductionProvisioner } from '../packages/core/src/signing/provisioner';
 import { DeviceEligibilityProbe } from '../packages/core/src/devices/eligibility';
 import { BootstrapSealing } from '../packages/core/src/apple/bootstrap-sealing';
-import { JobsActions } from '../packages/core/src/signing/jobs-actions';
+import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
 import {
   composeProductionPipeline,
   type ProductionPipelineConfig,
@@ -87,10 +83,20 @@ function appleClient(
 }
 async function production() {
   const kernel = await createPersonalRuntimeKernel({ env: process.env });
-  const { db, service, storage, catalogs, artifacts, vault } = kernel;
-  const nativeSessions = await createNativeAuth(db, process.env, origin).catch(async (error) => {
-    await db.close();
-    throw error;
+  const {
+    db,
+    sessions,
+    accounts,
+    connections,
+    deviceActions,
+    storage,
+    catalogs,
+    artifacts,
+    vault,
+  } = kernel;
+  const nativeSessions = new NativeSessions(db, {
+    origin,
+    callback: 'isign-feather://auth/callback',
   });
   const credentials = new AppleClientCredentials(db, vault, appleClient, Date.now);
   const certificates = new BootstrapCertificates(db, credentials.bootstrap.bind(credentials));
@@ -162,7 +168,7 @@ async function production() {
   const kickoff = pipeline.kickoff ? execution.run.bind(execution) : undefined;
   const retireLaunch = pipeline.retireLaunch ? execution.retireLaunch.bind(execution) : undefined;
   const dispatcher = new QueuedDispatcher(db, Date.now, kickoff);
-  const jobs = new JobsActions(
+  const jobs = new JobLifecycle(
     db,
     Date.now,
     pipeline.kickoff
@@ -171,9 +177,7 @@ async function production() {
         }
       : undefined,
   );
-  const enqueue = (owner: string, uploadId: string, key: string) =>
-    jobs.ensure(owner, { uploadId, key });
-  void service
+  void jobs
     .recoverLeases(pipeline.retireExecutor, retireLaunch)
     .then(() => dispatcher.dispatch())
     .catch(() => {});
@@ -182,20 +186,6 @@ async function production() {
     credentials.validateTeam.bind(credentials),
     Date.now,
   );
-  const cms =
-    process.env.ISIGN_DEVICE_POLICY_ID &&
-    process.env.ISIGN_DEVICE_CA_SHA256 &&
-    process.env.ISIGN_RUNNER_PROOF_KEY
-      ? deviceCmsRpc({
-          origin: kernel.config.runner.origin,
-          authToken: kernel.config.runner.token.reveal(),
-          audience: kernel.config.runner.audience,
-          proofKey: Buffer.from(process.env.ISIGN_RUNNER_PROOF_KEY, 'hex'),
-          policyId: process.env.ISIGN_DEVICE_POLICY_ID,
-          caSha256: process.env.ISIGN_DEVICE_CA_SHA256,
-          transport,
-        })
-      : undefined;
   const readyApi = credentials.ready.bind(credentials);
   const eligibility = new DeviceEligibilityProbe(db, Date.now, readyApi, pipeline.cmsVerifier);
   const collectionCms = deviceCollectionCms({
@@ -219,14 +209,13 @@ async function production() {
       );
     },
     Date.now,
-    cms ?? collectionCms,
   );
   const collections = new DeviceCollection(
     db,
     devices,
     Date.now,
     collectionCms,
-    nativeSessions ? nativeCollectionSession : undefined,
+    nativeCollectionSession,
   );
   void collections.reconcileDue(20).catch(() => {});
   const tickets = new Tickets(db, Date.now, (owner, device, force) =>
@@ -242,8 +231,7 @@ async function production() {
   );
   const connectApple = new ConnectApple(onboarding, bootstrap);
   const receiveUpload = new ReceiveUpload(db, storage, jobs);
-  const jobRequests = new JobRequests(db, jobs, devices);
-  const authorization = new RequestAuthorization(db, Date.now);
+  const authorization = new RequestAuthorization(db);
   const clientInstaller = new ClientInstallations({
     db,
     release: new LocalClientRelease(process.env),
@@ -258,44 +246,37 @@ async function production() {
       await signingReadiness.ensure(owner);
     },
   });
-  const lifecycle = new RequestLifecycle(service, jobs, storage, artifacts);
+  const lifecycle = new RequestLifecycle(accounts, storage, artifacts);
   const queries = new RuntimeQueries(db, Date.now);
   const sharing = new AppleSharing(db, Date.now);
-  const nativeAssets = nativeSessions
-    ? new FeatherSigningAssets(db, {
-        api: readyApi,
-        vault,
-        material: new OpenSslSigningMaterial(
-          process.env.ISIGN_FEATHER_OPENSSL ?? '/usr/bin/openssl',
-        ),
-        verify: pipeline.cmsVerifier ?? denyControlProfile,
-        now: Date.now,
-      })
-    : undefined;
-  const nativeApplication =
-    nativeSessions && nativeAssets
-      ? new NativeApplication({
-          auth: nativeSessions,
-          queries,
-          sharing,
-          collections,
-          devices,
-          actions: service.devices,
-          catalogs,
-          catalog: new FeatherCatalog(db, catalogs, { now: Date.now }),
-          assets: nativeAssets,
-          admin: kernel.admin,
-          connectApple: connectApple.run.bind(connectApple),
-          disconnectApple: service.apple.disconnectFor.bind(service.apple),
-          deleteAccount: lifecycle.deleteAccountFor.bind(lifecycle),
-          bootstrap,
-        })
-      : undefined;
+  const nativeAssets = new FeatherSigningAssets(db, {
+    api: readyApi,
+    vault,
+    material: new OpenSslSigningMaterial(process.env.ISIGN_OPENSSL ?? '/usr/bin/openssl'),
+    verify: pipeline.cmsVerifier ?? denyControlProfile,
+    now: Date.now,
+  });
+  const nativeApplication = new NativeApplication({
+    auth: nativeSessions,
+    queries,
+    sharing,
+    collections,
+    devices,
+    actions: deviceActions,
+    catalogs,
+    catalog: new FeatherCatalog(db, catalogs, { now: Date.now }),
+    assets: nativeAssets,
+    admin: kernel.admin,
+    connectApple: connectApple.run.bind(connectApple),
+    disconnectApple: connections.disconnectFor.bind(connections),
+    deleteAccount: lifecycle.deleteAccountFor.bind(lifecycle),
+    bootstrap,
+  });
   const diagnostics =
     process.env.ISIGN_PROFILE_DIAGNOSTICS === '1'
       ? new ProfileDiagnostics(db, Date.now, '/state/isign/profile-diagnostics')
       : undefined;
-  const deviceCallback = new ReceiveDeviceCallback(collections, devices, diagnostics);
+  const deviceCallback = new ReceiveDeviceCallback(collections, diagnostics);
   const runnerAuthorization = createRunnerAuthorizer(
     db,
     Date.now,
@@ -307,22 +288,15 @@ async function production() {
     nativeSessions,
     nativeApplication,
     connectApple: connectApple.run.bind(connectApple),
-    receiveUpload: receiveUpload.run.bind(receiveUpload),
-    jobRequests,
-    authorization,
-    lifecycle,
     receiveDeviceCallback: deviceCallback.run.bind(deviceCallback),
     runnerAuthorization,
-    history: new InstallationHistory(db, Date.now),
     backgroundTasks: [
-      ...(nativeAssets
-        ? [{ name: 'feather', intervalMs: 60000, run: () => nativeAssets.maintain() }]
-        : []),
+      { name: 'feather', intervalMs: 60000, run: () => nativeAssets.maintain() },
       {
         name: 'queue',
         intervalMs: 5000,
         run: () =>
-          service
+          jobs
             .recoverLeases(pipeline.retireExecutor, retireLaunch)
             .then(() => dispatcher.dispatch()),
       },
@@ -340,32 +314,26 @@ async function production() {
             .recoverInterrupted()
             .then(() => storage.cleanup())
             .then(() => artifacts.cleanup())
-            .then(() => service.recoverLeases(pipeline.retireExecutor, retireLaunch))
+            .then(() => jobs.recoverLeases(pipeline.retireExecutor, retireLaunch))
             .then(() => dispatcher.dispatch())
             .then(() => kernel.secretDeletionWorker.runOne())
             .then(() => cleanupHistory(db, Date.now())),
       },
     ],
     close: db.close.bind(db),
-    service: {
-      session: service.session.bind(service),
-      authorizeWrite: service.authorizeWrite.bind(service),
-      fresh: service.fresh.bind(service),
-      logout: service.logout.bind(service),
-      selectDevice: service.selectDevice.bind(service),
-      removeDevice: service.removeDevice.bind(service),
-      disconnect: service.disconnect.bind(service),
-      devices: { removeIdentity: service.devices.removeIdentity.bind(service.devices) },
+    sessions: {
+      session: sessions.session.bind(sessions),
+      authorizeWrite: sessions.authorizeWrite.bind(sessions),
+      fresh: sessions.fresh.bind(sessions),
+      logout: sessions.logout.bind(sessions),
     },
+    deviceActions: { selectDevice: deviceActions.selectDevice.bind(deviceActions) },
+    connections: { disconnect: connections.disconnect.bind(connections) },
     queries,
     catalogs,
     artifacts: { open: artifacts.open.bind(artifacts) },
     tickets,
-    importer: new Importer(db, catalogs, storage, jobs),
-    enqueue,
-    jobs,
     bootstrap,
-    ensureSigningReady: signingReadiness.ensure.bind(signingReadiness),
     auth: {
       rate: kernel.auth.rate.bind(kernel.auth),
       registrationOptions: kernel.auth.registrationOptions.bind(kernel.auth),
@@ -374,15 +342,10 @@ async function production() {
       authenticate: kernel.auth.authenticate.bind(kernel.auth),
       addOptions: kernel.auth.addOptions.bind(kernel.auth),
     },
-    admin: kernel.admin,
-    onboarding,
     devices,
     collections,
     sharing,
-    readiness: async () => {
-      await clientInstaller.assertReady();
-      await readiness.check();
-    },
+    readiness: readiness.check.bind(readiness),
     capabilities: {
       appleOnboarding: true,
       bootstrap: !!bootstrap,

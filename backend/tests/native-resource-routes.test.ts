@@ -122,7 +122,7 @@ it('maps admin delete and formats a native device collection profile link', asyn
     expiresAt: 600000,
   });
 });
-it('rejects cookie-only resource calls, malformed data, and disabled native resources', async () => {
+it('rejects cookie-only resource calls and malformed data', async () => {
   expect(
     (
       await handle(
@@ -134,6 +134,4 @@ it('rejects cookie-only resource calls, malformed data, and disabled native reso
     (await handle(request('devices/d1/register', 'POST', { slotConsent: 'yes' }))).status,
   ).toBe(400);
   expect(command).not.toHaveBeenCalled();
-  runtime.mockResolvedValue({});
-  expect((await handle(request('sources'))).status).toBe(503);
 });

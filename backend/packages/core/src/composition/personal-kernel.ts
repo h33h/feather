@@ -3,16 +3,20 @@ import { AdminUsers } from '../auth/admin';
 import { Pool, types } from 'pg';
 import { PersonalAuth } from '../auth/passkeys';
 import { PersonalObjects, PersonalStorage, PersonalArtifacts } from '../library/personal-storage';
-import { Service } from '../application/service';
+import { SessionService } from '../auth/sessions';
+import { AccountLifecycle } from '../auth/account-lifecycle';
+import { ConnectionLifecycle } from '../apple/connection-lifecycle';
+import { DeviceActions } from '../devices/actions';
+import { JobLifecycle } from '../signing/job-lifecycle';
 import { ProductionDatabase, type SqlPool } from '../infrastructure/postgres';
 import { createPostgresPool, safeBigint } from '../infrastructure/postgres-pool';
 import { postgresQuery } from '../infrastructure/postgres-query';
 import {
   loadProviderConfig,
   providerDiagnostics,
-  ProviderError,
   type PersonalConfig,
 } from '../infrastructure/config';
+import { ProviderError } from '../shared/errors';
 import { LocalEnvelopeKms } from '../infrastructure/local-kms';
 import { Vault } from '../apple/vault';
 import { Tickets } from '../library/tickets';
@@ -62,10 +66,14 @@ export async function createPersonalRuntimeKernel(options: {
       artifacts = new PersonalArtifacts(objects);
     await storage.cleanup();
     await artifacts.cleanup();
-    const service = new Service(db, { now }),
+    const sessions = new SessionService(db, { now }),
+      accounts = new AccountLifecycle(db, now, sessions),
+      connections = new ConnectionLifecycle(db, now, sessions),
+      deviceActions = new DeviceActions(db, now),
+      jobs = new JobLifecycle(db, now),
       auth = new PersonalAuth(db, config.origin, now),
       vault = new Vault(db, kms, now);
-    await service.jobs.recoverReceiving();
+    await jobs.recoverReceiving();
     await storage.cleanup();
     const catalogs = new CatalogRegistry(db, now);
     await catalogs.ensureBuiltIns();
@@ -75,7 +83,11 @@ export async function createPersonalRuntimeKernel(options: {
       kms,
       storage,
       artifacts,
-      service,
+      sessions,
+      accounts,
+      connections,
+      deviceActions,
+      jobs,
       auth,
       admin: new AdminUsers(db, auth, now),
       vault,

@@ -49,11 +49,11 @@ class TransportTests(unittest.TestCase):
 
         http = Http()
         authorize = m.HttpBindingAuthorizer(http, key)
-        self.assertTrue(authorize("grant", {"ownerId": "o"}))
+        self.assertTrue(authorize("principal", "grant", {"ownerId": "o"}))
         self.assertEqual(http.request_body["binding"], {"ownerId": "o"})
         http.request = lambda *a, **kw: b'{"report":{"authorized":true},"attestation":"forged"}'
         with self.assertRaises(ValueError):
-            authorize("grant", {"ownerId": "o"})
+            authorize("principal", "grant", {"ownerId": "o"})
 
 
 class KeepaliveTests(http_fixtures.HTTPFixtures):

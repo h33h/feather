@@ -147,10 +147,10 @@ class EntitlementsTests(unittest.TestCase):
                 )
             )
 
-    def test_verified_der_flag_never_bypasses_validation_or_consistency(self):
+    def test_der_validation_and_consistency_are_always_required(self):
         for payload in (b"broken", LINUX):
             with self.subTest(payload=payload), self.assertRaises(ValueError):
-                analyzer.entitlements(matching_signature({"a": False}, payload), True)
+                analyzer.entitlements(matching_signature({"a": False}, payload))
 
     def test_integer_values_survive_json_without_rounding(self):
         for encoded, expected in (

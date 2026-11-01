@@ -238,9 +238,6 @@
 .installer-panel .installer-muted {
   color: var(--muted);
 }
-.installer-panel .installer-success {
-  color: var(--color-success);
-}
 .installer-panel .installer-summary {
   font-weight: 600;
   margin-bottom: 6px;

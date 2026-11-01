@@ -14,7 +14,7 @@ const subscribeDialogs = (update: () => void) => {
   });
   return () => observer.disconnect();
 };
-export function FeedbackIcon() {
+function FeedbackIcon() {
   return (
     <svg className="feedback-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
       <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.8" />
@@ -22,15 +22,7 @@ export function FeedbackIcon() {
     </svg>
   );
 }
-export function Toast({
-  message,
-  onClose,
-  role = 'alert',
-}: {
-  message: string;
-  onClose: () => void;
-  role?: 'alert' | 'status';
-}) {
+export function Toast({ message, onClose }: { message: string; onClose: () => void }) {
   const dialog = useSyncExternalStore(subscribeDialogs, activeDialog, serverDialog);
   const close = useRef(onClose);
   useEffect(() => {
@@ -43,7 +35,7 @@ export function Toast({
   }, [message]);
   if (!message) return null;
   const bubble = (
-    <div className="top-toast feedback-bubble" role={role}>
+    <div className="top-toast feedback-bubble" role="alert">
       <FeedbackIcon />
       <span>{message}</span>
       <IconButton tone="ghost" label="Закрыть уведомление" onClick={onClose}>

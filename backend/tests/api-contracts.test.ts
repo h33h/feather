@@ -1,10 +1,5 @@
 import { expect, it } from 'vitest';
-import {
-  appleSchema,
-  devicesSchema,
-  librarySchema,
-  sessionSchema,
-} from '../packages/contracts/src/index';
+import { appleSchema, devicesSchema, sessionSchema } from '../packages/contracts/src/index';
 import { query } from '../../web/src/shared/api/query';
 import { installerAccount, installerApple, installerDevices } from './helpers/browser-installer';
 it('typed queries validate and project nested DTOs before returning them', async () => {
@@ -20,7 +15,7 @@ it('typed queries validate and project nested DTOs before returning them', async
     capabilities: installerAccount.capabilities,
   });
   await expect(
-    query(async () => ({ jobs: [], artifacts: [{ id: 'a' }] }), 'library', librarySchema),
+    query(async () => ({ devices: [{ id: 'd' }], collectedDevices: [] }), 'devices', devicesSchema),
   ).rejects.toThrow();
 });
 it('installer fixtures satisfy the actual account and device DTOs', () => {

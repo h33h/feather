@@ -29,6 +29,7 @@ class SourceAnalysisTests(unittest.TestCase):
         self.source.write_bytes(self.raw)
         self.analysis = self.analyzer.analyze_file(self.source)
         self.grant = dict(
+            connectionOwnerId="owner",
             ownerId="owner",
             jobId="job",
             leaseToken="lease",
@@ -44,7 +45,14 @@ class SourceAnalysisTests(unittest.TestCase):
             identity={"materialPath": "identity.p12"},
             profiles={},
             udid="device",
-            components=copy.deepcopy(self.analysis["components"]),
+            components=[
+                {
+                    **copy.deepcopy(component),
+                    "sourceBundleId": component["bundleId"],
+                    "sourceEntitlements": copy.deepcopy(component["entitlements"]),
+                }
+                for component in self.analysis["components"]
+            ],
         )
         self.verifier = self.verification.GuestVerifier.__new__(self.verification.GuestVerifier)
         self.verifier.root = self.root
@@ -117,7 +125,14 @@ class SourceAnalysisTests(unittest.TestCase):
         self.source.write_bytes(self.raw)
         self.analysis = self.analyzer.analyze_file(self.source)
         self.grant["uploadDigest"] = hashlib.sha256(self.raw).hexdigest()
-        self.task["components"] = copy.deepcopy(self.analysis["components"])
+        self.task["components"] = [
+            {
+                **copy.deepcopy(component),
+                "sourceBundleId": component["bundleId"],
+                "sourceEntitlements": copy.deepcopy(component["entitlements"]),
+            }
+            for component in self.analysis["components"]
+        ]
         self.task["removedExtensions"] = copy.deepcopy(self.analysis["removedExtensions"])
         app = self.controller.GuestController.__new__(self.controller.GuestController)
         app.root = self.root

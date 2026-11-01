@@ -31,9 +31,16 @@ export class JobLifecycle {
   constructor(
     public db: Database,
     private clock: () => number,
+    private kickoff?: (owner: string, job: string, device: string) => Promise<unknown>,
   ) {}
   get now() {
     return this.clock();
+  }
+  private notify(owner: string, job: string, device: string) {
+    if (this.kickoff)
+      void Promise.resolve()
+        .then(() => this.kickoff!(owner, job, device))
+        .catch(() => {});
   }
   private async owner(tx: QueryDatabase, owner: string) {
     if (
@@ -177,15 +184,16 @@ export class JobLifecycle {
     });
   }
   async completeSource(owner: string, jobId: string) {
-    const rows = await this.db.query(
-      `UPDATE jobs j SET state='queued',updated_at=$3 WHERE id=$1 AND owner_id=$2 AND state='receiving' AND ${eligible} RETURNING id`,
+    const rows = await this.db.query<{ device_id: string }>(
+      `UPDATE jobs j SET state='queued',updated_at=$3 WHERE id=$1 AND owner_id=$2 AND state='receiving' AND ${eligible} RETURNING device_id`,
       [jobId, owner, this.now],
     );
     if (!rows.rows.length) throw new Failure('SIGNING_INPUT_NOT_READY', 409);
+    this.notify(owner, jobId, rows.rows[0].device_id);
   }
   async enqueue(owner: string, upload: string, key: string, deviceId?: string) {
     this.key(key);
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       await lockAuthority(tx);
       await this.owner(tx, owner);
       const previous = (
@@ -221,6 +229,54 @@ export class JobLifecycle {
         created: true,
       };
     });
+    if (result.created) {
+      const selected = (
+        await this.db.query<{ device_id: string }>(
+          'SELECT device_id FROM jobs WHERE id=$1 AND owner_id=$2',
+          [result.id, owner],
+        )
+      ).rows[0];
+      this.notify(owner, result.id, selected.device_id);
+    }
+    return result;
+  }
+  async cancel(owner: string, job: string) {
+    await this.db.transaction(async (tx) => {
+      await lockAuthority(tx);
+      const active = await tx.query(
+        'SELECT id FROM users WHERE id=$1 AND deleted_at IS NULL AND blocked_at IS NULL FOR UPDATE',
+        [owner],
+      );
+      if (!active.rows.length) throw new Failure('USER_UNAVAILABLE', 404);
+      const updated = await tx.query(
+        "UPDATE jobs SET state='cancelled',reason='USER_CANCELLED',finished_at=$3,updated_at=$3,lease_token=NULL,lease_expires=NULL WHERE id=$1 AND owner_id=$2 AND state IN('receiving','queued','analyzing','provisioning','signing','verifying') RETURNING upload_id",
+        [job, owner, this.now],
+      );
+      if (!updated.rows.length) {
+        const existing = await tx.query('SELECT id FROM jobs WHERE id=$1 AND owner_id=$2', [
+          job,
+          owner,
+        ]);
+        if (!existing.rows.length) throw new Failure('NOT_FOUND', 404);
+        return;
+      }
+      await tx.query('UPDATE executor_tasks SET consumed=true WHERE job_id=$1 AND owner_id=$2', [
+        job,
+        owner,
+      ]);
+      await tx.query(
+        'UPDATE uploads SET delete_requested_at=$3 WHERE id IN(SELECT upload_id FROM jobs WHERE id=$1 AND owner_id=$2)',
+        [job, owner, this.now],
+      );
+    });
+    const result = (
+      await this.db.query<{ id: string; state: string; reason: string | null }>(
+        'SELECT id,state,reason FROM jobs WHERE id=$1 AND owner_id=$2',
+        [job, owner],
+      )
+    ).rows[0];
+    if (!result) throw new Failure('NOT_FOUND', 404);
+    return result;
   }
   async claim(jobId: string, ownerId: string) {
     return this.db.transaction(async (tx) => {
@@ -369,7 +425,7 @@ export class JobLifecycle {
   }
 }
 export interface JobLeaseService {
-  deferBusy?(lease: Lease): Promise<void>;
+  deferBusy(lease: Lease): Promise<void>;
   claim(jobId: string, ownerId: string): Promise<string>;
   heartbeat(jobId: string, ownerId: string, lease: string): Promise<void>;
   finishAttempt(

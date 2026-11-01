@@ -1,10 +1,16 @@
 import { expect, it } from 'vitest';
 import type { Api, AuthSession } from '../../web/src/shared/api/contracts';
 import { loadSession } from '../../web/src/shared/api/session-loader';
-const session = {
+const session: AuthSession = {
+  authenticated: true,
   csrf: 'csrf',
-  profile: { id: 'one', loginName: 'user', role: 'user' },
-  capabilities: {},
+  profile: {
+    id: 'one',
+    loginName: 'user',
+    role: 'user',
+    publicProfileId: 'profile_11111111111111111111111111111111',
+  },
+  capabilities: { runner: false, appleOnboarding: true, bootstrap: true, deviceEnrollment: true },
 };
 function deferred() {
   let resolve!: (value: Awaited<ReturnType<Api>>) => void;

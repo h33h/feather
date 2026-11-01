@@ -31,7 +31,11 @@ import XCTest
     }
     func testDelayedBundleCannotRepopulateAfterKnownAuthorityLoss() async throws {
         let transport = DelayedTransport(), vault = MemoryVault(), client = try seeded(transport, vault)
-        let old = Task { try await client.fetchAndCache("signing/bundle", key: "bundle", method: "POST", body: [:]) }
+        let scope = client.signingScope
+        let old = Task {
+            let data = try await client.raw("signing/bundle", method: "POST", body: [:])
+            try client.cacheSigning(data, key: "bundle", scope: scope)
+        }
         await transport.wait("bundle")
         let invalidation = Task { try await client.raw("signing/profiles/ensure", method: "POST", body: [:]) }
         await transport.wait("ensure"); await transport.respond("ensure", Data(#"{"code":"CERTIFICATE_NOT_CURRENT"}"#.utf8), status: 409)
@@ -54,7 +58,7 @@ import XCTest
     func testNonreadyIdentityPurgesHistoryAndResumesToFreshBundle() async throws {
         for state in ["missing", "reconciling", "action_required", "revoked"] {
             let transport = DelayedTransport(), vault = MemoryVault(), client = try seeded(transport, vault)
-            let result = try JSONDecoder().decode(ISignIdentity.self, from: Data("{\"state\":\"\(state)\"}".utf8))
+            let result = try JSONDecoder().decode(ISignIdentity.self, from: Data("{\"state\":\"\(state)\",\"connectionId\":\"c\",\"connectionGeneration\":1,\"teamId\":\"TEAM123456\"}".utf8))
             let previousScope = client.signingScope
             try client.observeIdentity(result)
             for key in materialKeys { XCTAssertNil(try client.cached(key)) }
@@ -67,10 +71,10 @@ import XCTest
             try client.cacheSigning(data, key: "bundle", scope: scope.signing)
         })
         let work = Task { try await sync.reconcile() }
-        await transport.wait("ensure"); await transport.respond("ensure", Data(#"{"state":"reconciling"}"#.utf8))
+        await transport.wait("ensure"); await transport.respond("ensure", Data(#"{"state":"reconciling","connectionId":"c","connectionGeneration":1,"teamId":"TEAM123456"}"#.utf8))
         await transport.wait("identity")
         for key in materialKeys { XCTAssertNil(try client.cached(key)) }
-        await transport.respond("identity", Data(#"{"state":"ready"}"#.utf8))
+        await transport.respond("identity", Data(#"{"state":"ready","connectionId":"c","connectionGeneration":1,"teamId":"TEAM123456","identityId":"i","revision":1,"certificateSha256":"digest","expiresAt":9999999999999}"#.utf8))
         await transport.wait("bundle"); await transport.respond("bundle", Data("fresh".utf8))
         _ = try await work.value
         XCTAssertEqual(try client.cached("bundle"), Data("fresh".utf8)); XCTAssertNil(try client.cached("bundle-history"))
@@ -85,9 +89,15 @@ import XCTest
     }
     func testInvalidationFencesSigningScopeAndLateProfilesButNotIndependentSources() async throws {
         let transport = DelayedTransport(), vault = MemoryVault(), client = try seeded(transport, vault)
-        let oldScope = client.signingScope
-        let profiles = Task { try await client.fetchAndCache("signing/profiles/operation", key: "profiles:old:1:request") }
-        let source = Task { try await client.fetchAndCache("sources/feed", key: "source-cache") }
+        let oldScope = client.signingScope, generation = client.generation
+        let profiles = Task {
+            let data = try await client.raw("signing/profiles/operation")
+            try client.cacheSigning(data, key: "profiles:old:1:request", scope: oldScope)
+        }
+        let source = Task {
+            let data = try await client.raw("sources/feed")
+            try client.cache(data, key: "source-cache", generation: generation)
+        }
         await transport.wait("operation"); await transport.wait("feed")
         try client.invalidateSigning()
         XCTAssertThrowsError(try client.cacheSigning(Data("old".utf8), key: "bundle-history", scope: oldScope))

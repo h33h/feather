@@ -19,11 +19,9 @@ flock -w 120 9
 unset WEB_IMAGE
 
 candidate=''
-candidate_compose=''
 known_images="$(docker image ls --no-trunc --format '{{.ID}} {{.ID}}' isign-web)"
 cleanup() {
   [[ -z "$candidate" ]] || rm -f -- "$candidate"
-  [[ -z "$candidate_compose" ]] || rm -f -- "$candidate_compose"
   local images tag id containers
   if ! images="$(docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}} {{.ID}}' isign-web)"; then
     echo 'Could not list web images for cleanup.' >&2
@@ -67,17 +65,27 @@ awk '!/^[[:space:]]*(export[[:space:]]+)?WEB_IMAGE[[:space:]]*=/' .env > "$candi
 printf 'WEB_IMAGE=%s\n' "$image" >> "$candidate"
 chmod 600 "$candidate"
 
-# Existing servers retain their operator-owned Compose file between deployments.
-# Migrate only the two exact legacy runtime paths in a private candidate copy.
-candidate_compose="$(mktemp compose.deploy.XXXXXX.yml)"
-sed -E \
-  -e 's@(^|[^[:alnum:]_/.-])scripts/personal-start\.ts([^[:alnum:]_/.-]|$)@\1backend/scripts/personal-start.ts\2@g' \
-  -e 's@/app/apps/web/\.next/cache([^[:alnum:]_/.-]|$)@/app/web/.next/cache\1@g' \
-  compose.yml > "$candidate_compose"
-chmod 600 "$candidate_compose"
-
-next_compose=(docker compose --env-file "$candidate" -f "$candidate_compose")
+next_compose=(docker compose --env-file "$candidate" -f compose.yml)
 "${next_compose[@]}" config --quiet
+# Validate the current runtime with the loaded image's Node, without host tools
+# or changes to the operator-owned Compose file.
+"${next_compose[@]}" config --format json |
+  docker run --rm --interactive --network none --read-only --user 1000:1000 \
+    --cap-drop ALL --security-opt no-new-privileges --entrypoint node "$image" --eval '
+    let input = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => input += chunk);
+    process.stdin.on("end", () => {
+      const web = JSON.parse(input).services?.web;
+      const command = ["node", "--import", "tsx", "backend/scripts/personal-start.ts"];
+      const cache = "/app/web/.next/cache";
+      if (JSON.stringify(web?.command) !== JSON.stringify(command) ||
+          !web?.tmpfs?.some((mount) => mount.split(":", 1)[0] === cache)) {
+        console.error("Compose web runtime must use backend/scripts/personal-start.ts and /app/web/.next/cache.");
+        process.exitCode = 1;
+      }
+    });
+  '
 check_readiness() {
   local host
   host="$("${next_compose[@]}" exec -T web node -p 'new URL(process.env.ISIGN_ORIGIN).host')" || return 1
@@ -87,7 +95,6 @@ check_readiness() {
 }
 if "${next_compose[@]}" up --no-deps --detach --pull never --wait --wait-timeout 120 web &&
   check_readiness; then
-  mv -f -- "$candidate_compose" compose.yml
   mv -f -- "$candidate" .env
   printf 'Deployed web image %s\n' "$image"
 else

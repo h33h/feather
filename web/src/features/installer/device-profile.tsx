@@ -6,19 +6,7 @@ import { TaskButton } from '../../shared/ui';
 import { Modal } from '../../shared/ui/modal';
 import { useBrowserContext } from '../../shared/ui/browser-context';
 import { CopyValue } from '../../shared/ui/copy-value';
-export function DeviceProfile({
-  api,
-  action,
-  busy,
-  enrollment,
-  storeLayout = false,
-}: {
-  api: Api;
-  action: Action;
-  busy: boolean;
-  enrollment: boolean;
-  storeLayout?: boolean;
-}) {
+export function DeviceProfile({ api, action, busy }: { api: Api; action: Action; busy: boolean }) {
   const [expiresAt, setExpiresAt] = useState<number | null>(null),
     [phone, setPhone] = useState<{ url: string; svg: string; expiresAt: number } | null>(null),
     [sheet, setSheet] = useState<'profile' | 'qr' | null>(null);
@@ -90,7 +78,7 @@ export function DeviceProfile({
       setNow(Date.now());
     });
   }
-  const downloadLabel = storeLayout ? 'Скачать профиль' : 'Скачать профиль для UDID';
+  const downloadLabel = 'Скачать профиль для UDID';
   return (
     <div className="device-profile">
       <div className="installer-help">
@@ -193,10 +181,8 @@ export function DeviceProfile({
               ) : (
                 <p>
                   Откройте скачанный профиль в настройках iPhone до{' '}
-                  {new Date(expiresAt).toLocaleTimeString('ru-RU')}.{' '}
-                  {enrollment
-                    ? 'После возврата UDID появится автоматически.'
-                    : 'Автоматическое получение UDID временно недоступно. Повторите позже.'}
+                  {new Date(expiresAt).toLocaleTimeString('ru-RU')}. После возврата UDID появится
+                  автоматически.
                 </p>
               )}
             </div>

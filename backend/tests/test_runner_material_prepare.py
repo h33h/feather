@@ -14,7 +14,12 @@ def load():
 class MaterialTests(unittest.TestCase):
     def setUp(self):
         self.m = load()
-        self.grant = {"ownerId": "o", "connectionId": "c", "connectionGeneration": 1}
+        self.grant = {
+            "connectionOwnerId": "o",
+            "ownerId": "o",
+            "connectionId": "c",
+            "connectionGeneration": 1,
+        }
 
     def sealed(self):
         try:

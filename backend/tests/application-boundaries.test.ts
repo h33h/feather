@@ -8,7 +8,7 @@ it('keeps database, storage and service construction out of HTTP', () => {
   for (const name of readdirSync(directory).filter((name) => name.endsWith('.ts'))) {
     const source = readFileSync(join(directory, name), 'utf8');
     expect(source, name).not.toMatch(
-      /app\.(?:db|storage|artifacts)\b|new (?:JobRequests|InstallationHistory|RunnerAuthorization|ProfileDiagnostics)\b/,
+      /app\.(?:db|storage|artifacts)\b|new (?:RunnerAuthorization|ProfileDiagnostics)\b/,
     );
   }
 });
@@ -23,7 +23,6 @@ it('types the HTTP capability surface without database, storage, vault or nested
   expectTypeOf<HttpApplication>().not.toHaveProperty('db');
   expectTypeOf<HttpApplication>().not.toHaveProperty('storage');
   expectTypeOf<HttpApplication>().not.toHaveProperty('vault');
-  expectTypeOf<HttpApplication['service']>().not.toHaveProperty('db');
+  expectTypeOf<HttpApplication['sessions']>().not.toHaveProperty('db');
   expectTypeOf<HttpApplication['auth']>().not.toHaveProperty('db');
-  expectTypeOf<HttpApplication['jobs']>().not.toHaveProperty('queue');
 });

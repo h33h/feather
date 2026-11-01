@@ -1,4 +1,5 @@
-import { ProviderError, requireServer } from './config';
+import { requireServer } from './config';
+import { ProviderError } from '../shared/errors';
 export interface SqlResult<T> {
   rows: T[];
   rowCount?: number | null;

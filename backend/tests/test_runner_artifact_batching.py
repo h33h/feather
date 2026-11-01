@@ -28,7 +28,7 @@ class ArtifactBatchingTests(unittest.TestCase):
             self.app = self.guest.GuestController(
                 runtime,
                 identity=self.identity,
-                evidence={k: True for k in self.guest.native.REQUIRED_ISOLATION},
+                evidence={"type": "vm", **{k: True for k in self.guest.native.REQUIRED_ISOLATION}},
                 validate_launcher_identity=lambda *args: True,
                 token="T" * 32,
                 audience="guest",
@@ -113,16 +113,11 @@ class ArtifactBatchingTests(unittest.TestCase):
         self.assertTrue(all(0 < len(chunk) <= SLICE for chunk in chunks))
         self.assertEqual(len(self.requests), 2)
 
-    def test_legacy_guest_request_keeps_sixty_four_kibibyte_default(self):
-        expected = self.source(SLICE + 3)
-        first = self.delegate.call(self.channel, "artifact", {"ref": "signed_ipa", "offset": 0})
-        second = self.delegate.call(
-            self.channel, "artifact", {"ref": "signed_ipa", "offset": SLICE}
-        )
-        self.assertEqual(base64.b64decode(first["data"]), expected[:SLICE])
-        self.assertIs(first["done"], False)
-        self.assertEqual(base64.b64decode(second["data"]), expected[SLICE:])
-        self.assertIs(second["done"], True)
+    def test_guest_rejects_request_without_current_batch_limit(self):
+        self.source(SLICE + 3)
+        with self.assertRaisesRegex(ValueError, "^ARTIFACT_OFFSET_REJECTED$"):
+            self.app.action("artifact", {"ref": "signed_ipa", "offset": 0})
+        self.assertEqual(self.app.artifact_offset, 0)
 
     def test_one_mib_batch_fits_existing_nested_base64_stdio_frame_cap(self):
         expected = self.source(BATCH)
@@ -188,14 +183,16 @@ class ArtifactBatchingTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "^ARTIFACT_CHUNK_INVALID$"):
                         next(self.delegate.artifact(self.channel, "signed_ipa"))
 
-    def test_empty_nonfinal_batch_is_rejected_and_legacy_final_empty_is_eof(self):
-        with patch.object(
-            self.app, "action", return_value={"data": "", "offset": 0, "done": False}
-        ):
-            with self.assertRaisesRegex(ValueError, "^ARTIFACT_STREAM_INVALID$"):
+    def test_empty_batches_are_rejected_including_final_marker(self):
+        for done in (False, True):
+            with (
+                self.subTest(done=done),
+                patch.object(
+                    self.app, "action", return_value={"data": "", "offset": 0, "done": done}
+                ),
+                self.assertRaisesRegex(ValueError, "^ARTIFACT_STREAM_INVALID$"),
+            ):
                 next(self.delegate.artifact(self.channel, "signed_ipa"))
-        with patch.object(self.app, "action", return_value={"data": "", "offset": 0, "done": True}):
-            self.assertEqual(list(self.delegate.artifact(self.channel, "signed_ipa")), [])
 
     def test_closing_partial_batch_discards_buffer_without_fetching_another_batch(self):
         expected = self.source(BATCH + 1)

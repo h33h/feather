@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { X509Certificate, createHash } from 'node:crypto';
 import { createDatabase } from './helpers/database';
-import { BOOTSTRAP_SCHEMA } from '../packages/core/src/apple/bootstrap-store';
 import { BootstrapRenewal } from '../packages/core/src/apple/bootstrap-renewal';
 async function fixture() {
   const tmp = mkdtempSync(join(tmpdir(), 'isign-renewal-synthetic-'));
@@ -36,7 +35,6 @@ async function fixture() {
   }
   const cert = new X509Certificate(pem);
   const db = await createDatabase();
-  await db.query(BOOTSTRAP_SCHEMA);
   await db.query("INSERT INTO users(id,login_name,created_at) VALUES('o','o@test.example',1)");
   await db.query(
     "INSERT INTO connections(id,owner_id,team_id,state,provider,secret_ref,issuer_id,key_id) VALUES('c','o','ABCDEFGHIJ','ready','asc','p8','issuer','KEYID')",

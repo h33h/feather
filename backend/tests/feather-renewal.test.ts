@@ -179,15 +179,8 @@ it('a renewal certificate with the wrong key/team cannot replace the valid curre
     foreign.privateKey.fill(0);
   }
 });
-it('renewal migration preserves existing identities and constrains one candidate per connection generation', async () => {
+it('fresh schema constrains one renewal candidate per connection generation', async () => {
   const { f, first, threshold } = await renewalFixture();
-  const { readFile } = await import('node:fs/promises');
-  await f.db.exec(
-    "ALTER TABLE feather_signing_identities DROP COLUMN replacement_for CASCADE; CREATE UNIQUE INDEX feather_current_identity ON feather_signing_identities(connection_id,generation) WHERE state<>'retired';",
-  );
-  await f.db.exec(
-    await readFile('backend/packages/db/migrations/20261101-feather-renewal.sql', 'utf8'),
-  );
   expect((await f.assets.bundle('o')).identityId).toBe(first.identityId);
   f.setNow(threshold);
   f.setBeforeCertificate(async () => {

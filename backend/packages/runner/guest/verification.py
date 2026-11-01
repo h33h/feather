@@ -321,12 +321,10 @@ class GuestVerifier:
             for component in analysis["components"]:
                 planned = expected[component["path"]]
                 if not entitlement_policy.exact(
-                    component["entitlements"], planned.get("sourceEntitlements", {})
+                    component["entitlements"], planned["sourceEntitlements"]
                 ):
                     reject("SOURCE_ENTITLEMENTS_MISMATCH")
-                if component["bundleId"] != planned.get(
-                    "sourceBundleId", planned["bundleId"]
-                ) or any(
+                if component["bundleId"] != planned["sourceBundleId"] or any(
                     component[k] != planned[k]
                     for k in ("kind", "architectures", "platform", "encrypted", "minOs")
                 ):

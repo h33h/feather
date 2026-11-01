@@ -1,3 +1,4 @@
+import { storedSources, storedReleases } from './helpers/catalog';
 import { expect, it } from 'vitest';
 import { createDatabase } from './helpers/database';
 import { CatalogRegistry } from '../packages/core/src/catalog/registry';
@@ -40,7 +41,7 @@ it('publisher trust is explicit; discovery is bounded exact hosts with known Git
     ).rows[0];
     expect(row.feed).toMatchObject({ hosts: ['download.synthetic.invalid'], trust: 'publisher' });
     expect(row.feed.hosts).not.toContain('*');
-    const result = (await registry.releases('o', source.id))[0];
+    const result = (await storedReleases(db, 'o', source.id))[0];
     expect((await registry.selection('o', source.id, result.id, result.snapshot)).hosts).toEqual([
       'download.synthetic.invalid',
     ]);
@@ -76,7 +77,7 @@ it('singleflight spans requests, persistent lease spans registries, failures bac
     release();
     await Promise.all([a, b]);
     expect(reads).toBe(1);
-    const previous = await registry.releases('o', source.id);
+    const previous = await storedReleases(db, 'o', source.id);
     now += CatalogRegistry.refreshIntervalMs;
     fail = true;
     release = undefined as never;
@@ -84,11 +85,11 @@ it('singleflight spans requests, persistent lease spans registries, failures bac
     while (!release) await new Promise((resolve) => setTimeout(resolve, 1));
     release();
     await expect(failure).rejects.toThrow('REMOTE_UNAVAILABLE');
-    const state = (await registry.list('o'))[0];
+    const state = (await storedSources(db, 'o'))[0];
     expect(state.refresh_failures).toBe(1);
     expect(state.next_refresh_at).toBe(now + 60000);
     expect(state.last_error).toBe('REMOTE_UNAVAILABLE');
-    expect(await registry.releases('o', source.id)).toEqual(previous);
+    expect(await storedReleases(db, 'o', source.id)).toEqual(previous);
     await expect(registry.refresh('o', source.id)).rejects.toThrow('SOURCE_REFRESH_BACKOFF');
     expect(reads).toBe(2);
   } finally {
@@ -118,8 +119,8 @@ it('removed source cannot resurrect after an in-flight download', async () => {
     await registry.remove('o', source.id);
     release();
     await expect(pending).rejects.toThrow('SOURCE_DISABLED');
-    expect((await registry.list('o'))[0].state).toBe('deleted');
-    expect(await registry.releases('o', source.id)).toEqual([]);
+    expect((await storedSources(db, 'o'))[0].state).toBe('deleted');
+    expect(await storedReleases(db, 'o', source.id)).toEqual([]);
   } finally {
     await db.close();
   }
@@ -144,7 +145,7 @@ it('unsafe manifest URL never becomes a discovered artifact host', async () => {
       ),
       source = await registry.add('o', 'source', 'https://feed.synthetic.invalid/feed', [], true);
     await expect(registry.refresh('o', source.id)).rejects.toThrow('SSRF_BLOCKED');
-    expect(await registry.releases('o', source.id)).toEqual([]);
+    expect(await storedReleases(db, 'o', source.id)).toEqual([]);
   } finally {
     await db.close();
   }
@@ -171,26 +172,26 @@ it('automatically replaces iApps releases when the encrypted publisher feed chan
       async () => bytes,
     );
     await registry.ensureBuiltIn('o');
-    const source = (await registry.list('o'))[0];
+    const source = (await storedSources(db, 'o'))[0];
     await registry.refreshDue();
-    expect(await registry.releases('o', source.id)).toHaveLength(1654);
+    expect(await storedReleases(db, 'o', source.id)).toHaveLength(1654);
     now += CatalogRegistry.refreshIntervalMs;
     bytes = updated;
     expect((await registry.refreshDue())[0].status).toBe('fulfilled');
-    const releases = await registry.releases('o', source.id);
+    const releases = await storedReleases(db, 'o', source.id);
     expect(releases).toHaveLength(1);
-    expect(releases[0]).toMatchObject({
+    expect(releases[0].metadata).toMatchObject({
       name: 'Synthetic iApps refresh',
       version: '2.0',
-      downloadAvailable: true,
+      url: expect.stringMatching(/^https:/),
     });
     const corrupt = JSON.parse(updated.toString());
     corrupt.appRepositories = 'corrupted';
     bytes = Buffer.from(JSON.stringify(corrupt));
     now += CatalogRegistry.refreshIntervalMs;
     expect((await registry.refreshDue())[0].status).toBe('rejected');
-    expect(await registry.releases('o', source.id)).toEqual(releases);
-    expect((await registry.list('o'))[0]).toMatchObject({
+    expect(await storedReleases(db, 'o', source.id)).toEqual(releases);
+    expect((await storedSources(db, 'o'))[0]).toMatchObject({
       state: 'ready',
       refresh_failures: 1,
       last_error: 'GBOX_DECRYPT_FAILED',
@@ -202,7 +203,7 @@ it('automatically replaces iApps releases when the encrypted publisher feed chan
     bytes = updated;
     now += 60000;
     expect((await registry.refreshDue())[0].status).toBe('fulfilled');
-    expect((await registry.list('o'))[0]).toMatchObject({
+    expect((await storedSources(db, 'o'))[0]).toMatchObject({
       state: 'ready',
       refresh_failures: 0,
       last_error: null,
@@ -212,46 +213,7 @@ it('automatically replaces iApps releases when the encrypted publisher feed chan
   }
 });
 
-it('recovers a built-in iApps source from the old decoder backoff without waiting for its next scheduled retry', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const updated = await readFile(
-    new URL('./fixtures/iapps-updated-encrypted.json', import.meta.url),
-  );
-  const db = await createDatabase();
-  const now = 100;
-  try {
-    await db.query(
-      "INSERT INTO users(id,login_name,created_at) VALUES('o','o@synthetic.invalid',0)",
-    );
-    const registry = new CatalogRegistry(
-      db,
-      () => now,
-      async () => updated,
-    );
-    await registry.ensureBuiltIn('o');
-    const source = (await registry.list('o'))[0];
-    await db.query(
-      "UPDATE sources SET state='error',last_error='GBOX_EXPORT_CHANGED',refresh_failures=114,next_refresh_at=$2 WHERE id=$1",
-      [source.id, now + 3600000],
-    );
-    expect((await registry.refreshDue())[0]?.status).toBe('fulfilled');
-    expect((await registry.releases('o', source.id))[0]).toMatchObject({
-      name: 'Synthetic iApps refresh',
-      version: '2.0',
-      downloadAvailable: true,
-    });
-    expect((await registry.list('o'))[0]).toMatchObject({
-      state: 'ready',
-      last_error: null,
-      refresh_failures: 0,
-      next_refresh_at: now + CatalogRegistry.refreshIntervalMs,
-    });
-  } finally {
-    await db.close();
-  }
-});
-
-it('keeps ordinary iApps backoff, active leases and disabled sources protected during legacy recovery', async () => {
+it('respects iApps backoff, active leases and disabled sources', async () => {
   const db = await createDatabase();
   const now = 100;
   try {
@@ -266,16 +228,16 @@ it('keeps ordinary iApps backoff, active leases and disabled sources protected d
       },
     );
     await registry.ensureBuiltIn('o');
-    const source = (await registry.list('o'))[0];
+    const source = (await storedSources(db, 'o'))[0];
     for (const testCase of [
       { state: 'error', error: 'GBOX_DECRYPT_FAILED', lease: 0, failure: 'SOURCE_REFRESH_BACKOFF' },
       {
         state: 'error',
-        error: 'GBOX_EXPORT_CHANGED',
+        error: 'GBOX_DECRYPT_FAILED',
         lease: now + 60000,
         failure: 'SOURCE_REFRESH_RUNNING',
       },
-      { state: 'disabled', error: 'GBOX_EXPORT_CHANGED', lease: 0, failure: 'SOURCE_DISABLED' },
+      { state: 'disabled', error: 'GBOX_DECRYPT_FAILED', lease: 0, failure: 'SOURCE_DISABLED' },
     ]) {
       await db.query(
         'UPDATE sources SET state=$2,last_error=$3,next_refresh_at=$4,refresh_lease_until=$5 WHERE id=$1',

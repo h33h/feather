@@ -7,7 +7,7 @@ import contextlib
 
 
 from protocol.codec import canonical
-from protocol.limits import ARTIFACT_BATCH_LIMIT, ARTIFACT_SLICE_BYTES
+from protocol.limits import ARTIFACT_BATCH_LIMIT
 from protocol.errors import expected_ipa_failure
 import guest.analyzer as analyzer
 import guest.native as native
@@ -145,12 +145,9 @@ class GuestController:
             self.dead = True
             return {"destroyed": True}
         if operation == "artifact":
-            if not isinstance(payload, dict) or set(payload) not in (
-                {"ref", "offset"},
-                {"ref", "offset", "maxBytes"},
-            ):
+            if not isinstance(payload, dict) or set(payload) != {"ref", "offset", "maxBytes"}:
                 raise ValueError("ARTIFACT_OFFSET_REJECTED")
-            max_bytes = payload.get("maxBytes", ARTIFACT_SLICE_BYTES)
+            max_bytes = payload["maxBytes"]
             if (
                 payload["ref"] != "signed_ipa"
                 or type(payload["offset"]) is not int

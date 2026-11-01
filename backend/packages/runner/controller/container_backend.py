@@ -375,6 +375,9 @@ class ContainerBackend:
             raise ValueError("CONTROL_INSTANCE_BINDING_MISMATCH")
         grant = {
             "ownerId": binding["ownerId"],
+            "connectionOwnerId": binding["ownerId"]
+            if operation == "bootstrap-request"
+            else binding["connectionOwnerId"],
             "jobId": handle["binding"]["jobId"],
             "leaseToken": binding["nonce"],
             "connectionId": binding["connectionId"],
@@ -383,11 +386,7 @@ class ContainerBackend:
             "isolationInstanceId": handle["id"],
             "expiresAt": min(binding["expiresAt"], handle["expiresAt"]),
             "operation": operation,
-            **{
-                k: binding[k]
-                for k in ("connectionOwnerId", "accessGrantId", "accessGrantGeneration")
-                if k in binding
-            },
+            **{k: binding[k] for k in ("accessGrantId", "accessGrantGeneration") if k in binding},
         }
         return grant, self.proof(handle, grant)
 

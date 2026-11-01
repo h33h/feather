@@ -14,7 +14,6 @@ const allowed = new Set([
   'artifact',
   'destroy',
   'capabilities',
-  'device-cms',
   'device-profile-verify',
   'bootstrap-prepare',
   'material-prepare',
@@ -51,7 +50,7 @@ export class RunnerAuthorization {
       throw new Failure('RUNNER_AUTHORIZATION_INVALID', 403);
     const b = input.binding;
     let authorized = false;
-    if (['capabilities', 'device-cms'].includes(input.operation))
+    if (input.operation === 'capabilities')
       authorized =
         Object.keys(b).length === 1 &&
         typeof b.nonce === 'string' &&
@@ -115,12 +114,13 @@ export class RunnerAuthorization {
       authorized = r.rows.length === 1;
       if (authorized && input.operation === 'device-profile-verify') {
         try {
+          if (typeof b.connectionOwnerId !== 'string')
+            throw new Failure('RUNNER_AUTHORIZATION_INVALID', 403);
           await assertAppleAccess(this.db, {
             ownerId: String(b.ownerId),
             connectionId: String(b.connectionId),
             generation: Number(b.generation),
-            connectionOwnerId:
-              typeof b.connectionOwnerId === 'string' ? b.connectionOwnerId : undefined,
+            connectionOwnerId: b.connectionOwnerId,
             accessGrantId: typeof b.accessGrantId === 'string' ? b.accessGrantId : undefined,
             accessGrantGeneration:
               typeof b.accessGrantGeneration === 'number' ? b.accessGrantGeneration : undefined,

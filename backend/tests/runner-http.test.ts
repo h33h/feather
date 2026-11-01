@@ -8,6 +8,7 @@ async function* bytes(value: unknown) {
 const input = {
   ownerId: 'o',
   jobId: 'j',
+  launchNonce: 'n'.repeat(43),
   signal: new AbortController().signal,
   maxRuntimeMs: 1000,
   maxInputBytes: 10,
@@ -18,12 +19,10 @@ it('bootstrap seals only through authenticated guest receipt and destroys on rej
   const { createDatabase } = await import('./helpers/database');
   const { createProductionBootstrap } =
     await import('../packages/core/src/composition/signing-runtime');
-  const { BOOTSTRAP_SCHEMA } = await import('../packages/core/src/apple/bootstrap-store');
   const db = await createDatabase();
   let destroyed = false;
   const dataKey = Buffer.alloc(32, 4);
   try {
-    await db.query(BOOTSTRAP_SCHEMA);
     await db.query("INSERT INTO users(id,login_name,created_at) VALUES('owner','b@b.c',0)");
     await db.query(
       "INSERT INTO connections(id,owner_id,team_id,state,provider) VALUES('conn','owner','pending:conn','validating','asc')",
@@ -101,100 +100,125 @@ it('bootstrap seals only through authenticated guest receipt and destroys on rej
     await db.close();
   }
 });
-it('device CMS verifier checks pinned report and destroys guest before return', async () => {
-  const { createProductionDeviceVerifier } =
-    await import('../packages/core/src/composition/signing-runtime');
-  const { createHash } = await import('node:crypto');
-  let destroyed = false;
-  const cms = Buffer.from('opaque synthetic CMS');
-  const digest = createHash('sha256').update(cms).digest('hex');
-  const transport = {
-    request: async (request: { method: string; url: string; body: unknown }) => {
-      if (request.method === 'DELETE') {
-        destroyed = true;
-        return { status: 204, body: bytes({}) };
-      }
-      const p = JSON.parse(request.body as string);
-      const report = request.url.endsWith('/v1/instances')
-        ? {
-            id: 'cms_vm',
-            ownerId: p.ownerId,
-            jobId: p.jobId,
-            nonce: p.nonce,
-            audience: 'a',
-            disposable: true,
-            expiresAt: Date.now() + 10000,
-          }
-        : {
-            binding: p.binding,
-            operation: 'device-profile-verify',
-            audience: 'a',
-            value: {
-              digest,
-              teamId: 'ABCDEFGHIJ',
-              bundleId: 'test.control',
-              devices: ['a'.repeat(40)],
-              certificates: ['b'.repeat(64)],
-              expiresAt: Date.now() + 10000,
-              profileType: 'ad-hoc',
-              entitlements: { 'application-identifier': 'ABCDEFGHIJ.test.*' },
-            },
-          };
-      return {
-        status: 200,
-        body: bytes({
-          report,
-          attestation: createHmac('sha256', key).update(canonicalReport(report)).digest('hex'),
-        }),
-      };
-    },
-  };
-  const verify = createProductionDeviceVerifier({
-    endpoint: 'https://runner.example',
-    token: 't'.repeat(32),
-    audience: 'a',
-    proofKey: key,
-    transport,
-    capabilities: {
-      disposableAnalysis: true,
-      guestSigning: true,
-      sealedMaterials: true,
-      appleProvisioning: true,
-      bootstrap: true,
-    },
-  });
-  const result = await verify({
-    binding: { ownerId: 'o', connectionId: 'c', generation: 1 },
-    cms,
-    cmsSha256: digest,
-    expected: {
-      udid: 'a'.repeat(40),
-      certificateSha256: 'b'.repeat(64),
+it.each([false, true])(
+  'device verifier projects the current wire contract (shared: %s)',
+  async (shared) => {
+    const { createProductionDeviceVerifier } =
+      await import('../packages/core/src/composition/signing-runtime');
+    const { createHash } = await import('node:crypto');
+    let destroyed = false;
+    const cms = Buffer.from('opaque synthetic CMS');
+    const digest = createHash('sha256').update(cms).digest('hex');
+    const access = {
+      ownerId: shared ? 'recipient' : 'o',
+      connectionOwnerId: 'o',
+      connectionId: 'c',
+      generation: 1,
+      accessGrantId: shared ? 'share' : null,
+      accessGrantGeneration: shared ? 2 : null,
       teamId: 'ABCDEFGHIJ',
-      bundleId: 'test.control',
-    },
-    now: Date.now(),
-  });
-  expect(result.cmsSha256).toBe(digest);
-  expect(result.entitlements).toEqual({ 'application-identifier': 'ABCDEFGHIJ.test.*' });
-  expect(destroyed).toBe(true);
-  destroyed = false;
-  await expect(
-    verify({
-      binding: { ownerId: 'o', connectionId: 'c', generation: 1 },
+    };
+    const transport = {
+      request: async (request: { method: string; url: string; body: unknown }) => {
+        if (request.method === 'DELETE') {
+          destroyed = true;
+          return { status: 204, body: bytes({}) };
+        }
+        const p = JSON.parse(request.body as string);
+        if (request.url.endsWith('/v1/control/device-profile-verify')) {
+          expect(Object.keys(p.binding).sort()).toEqual(
+            [
+              'ownerId',
+              'connectionOwnerId',
+              'connectionId',
+              'generation',
+              'nonce',
+              'expiresAt',
+              ...(shared ? ['accessGrantId', 'accessGrantGeneration'] : []),
+            ].sort(),
+          );
+        }
+        const report = request.url.endsWith('/v1/instances')
+          ? {
+              id: 'cms_vm',
+              ownerId: p.ownerId,
+              jobId: p.jobId,
+              nonce: p.nonce,
+              audience: 'a',
+              disposable: true,
+              expiresAt: Date.now() + 10000,
+            }
+          : {
+              binding: p.binding,
+              operation: 'device-profile-verify',
+              audience: 'a',
+              value: {
+                digest,
+                teamId: 'ABCDEFGHIJ',
+                bundleId: 'test.control',
+                devices: ['a'.repeat(40)],
+                certificates: ['b'.repeat(64)],
+                expiresAt: Date.now() + 10000,
+                profileType: 'ad-hoc',
+                entitlements: { 'application-identifier': 'ABCDEFGHIJ.test.*' },
+              },
+            };
+        return {
+          status: 200,
+          body: bytes({
+            report,
+            attestation: createHmac('sha256', key).update(canonicalReport(report)).digest('hex'),
+          }),
+        };
+      },
+    };
+    const verify = createProductionDeviceVerifier({
+      endpoint: 'https://runner.example',
+      token: 't'.repeat(32),
+      audience: 'a',
+      proofKey: key,
+      transport,
+      capabilities: {
+        disposableAnalysis: true,
+        guestSigning: true,
+        sealedMaterials: true,
+        appleProvisioning: true,
+        bootstrap: true,
+      },
+    });
+    const result = await verify({
+      binding: access,
       cms,
       cmsSha256: digest,
       expected: {
-        udid: 'c'.repeat(40),
+        udid: 'a'.repeat(40),
         certificateSha256: 'b'.repeat(64),
         teamId: 'ABCDEFGHIJ',
         bundleId: 'test.control',
       },
       now: Date.now(),
-    }),
-  ).rejects.toThrow('CONTROL_PROFILE_PIN_MISMATCH');
-  expect(destroyed).toBe(true);
-});
+    });
+    expect(result.cmsSha256).toBe(digest);
+    expect(result.entitlements).toEqual({ 'application-identifier': 'ABCDEFGHIJ.test.*' });
+    expect(destroyed).toBe(true);
+    destroyed = false;
+    await expect(
+      verify({
+        binding: access,
+        cms,
+        cmsSha256: digest,
+        expected: {
+          udid: 'c'.repeat(40),
+          certificateSha256: 'b'.repeat(64),
+          teamId: 'ABCDEFGHIJ',
+          bundleId: 'test.control',
+        },
+        now: Date.now(),
+      }),
+    ).rejects.toThrow('CONTROL_PROFILE_PIN_MISMATCH');
+    expect(destroyed).toBe(true);
+  },
+);
 it('launch uses the persisted job lease nonce and exposes capacity contention distinctly', async () => {
   const { HttpRunnerProvider } = await import('../packages/core/src/infrastructure/runner-http');
   let launchNonce: unknown;
@@ -309,6 +333,7 @@ it.each(['source', 'analyze'] as const)(
     const vm = await provider.launch(input);
     const grant = {
       ownerId: 'o',
+      connectionOwnerId: 'o',
       jobId: 'j',
       leaseToken: 'lease',
       connectionId: 'connection',

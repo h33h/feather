@@ -77,12 +77,9 @@ export async function handle(request: NextRequest) {
     if (publicResult) return publicResult;
     const session =
       request.method === 'GET'
-        ? await app.service.session(raw)
-        : await app.service.authorizeWrite(raw, csrf, request.headers.get('origin') ?? '', origin);
+        ? await app.sessions.session(raw)
+        : await app.sessions.authorizeWrite(raw, csrf, request.headers.get('origin') ?? '', origin);
     const owner = session.ownerId;
-    const history = app.history;
-    const uploadAllowed = () => app.authorization.uploadAllowed(owner);
-    const requireUpload = () => app.authorization.requireUpload(owner);
     const authenticatedContext = {
       request,
       target,
@@ -91,9 +88,6 @@ export async function handle(request: NextRequest) {
       csrf,
       owner,
       session,
-      history,
-      uploadAllowed,
-      requireUpload,
     };
     const handlers: Record<
       string,

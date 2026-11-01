@@ -33,11 +33,9 @@ def validated_isolation(evidence):
         ):
             raise ValueError("GVISOR_ISOLATION_EVIDENCE_REQUIRED")
         return {"type": "gvisor", "runtime": "runsc", **{k: True for k in LINUX_ISOLATION}}
-    if evidence.get("type") not in (None, "vm") or any(
-        evidence.get(k) is not True for k in REQUIRED_ISOLATION
-    ):
+    if evidence.get("type") != "vm" or any(evidence.get(k) is not True for k in REQUIRED_ISOLATION):
         raise ValueError("VM_ISOLATION_EVIDENCE_REQUIRED")
-    return {k: True for k in REQUIRED_ISOLATION}
+    return {"type": "vm", **{k: True for k in REQUIRED_ISOLATION}}
 
 
 def validate_execution_grant(grant, now=None):
@@ -48,6 +46,7 @@ def validate_execution_grant(grant, now=None):
     ):
         fields = (
             "ownerId",
+            "connectionOwnerId",
             "jobId",
             "leaseToken",
             "connectionId",
@@ -70,21 +69,19 @@ def validate_execution_grant(grant, now=None):
             or grant["expiresAt"] <= (int(time.time() * 1000) if now is None else now)
         ):
             raise ValueError("CONTROL_EXECUTION_GRANT_INVALID")
-        if any(k in grant for k in ("connectionOwnerId", "accessGrantId", "accessGrantGeneration")):
+        shared = grant["connectionOwnerId"] != grant["ownerId"]
+        if shared:
             if (
-                not all(
-                    k in grant
-                    for k in ("connectionOwnerId", "accessGrantId", "accessGrantGeneration")
-                )
-                or not isinstance(grant["connectionOwnerId"], str)
-                or not grant["connectionOwnerId"]
-                or grant["connectionOwnerId"] == grant["ownerId"]
+                grant["operation"] != "device-profile-verify"
+                or not all(k in grant for k in ("accessGrantId", "accessGrantGeneration"))
                 or not isinstance(grant["accessGrantId"], str)
                 or not grant["accessGrantId"]
                 or type(grant["accessGrantGeneration"]) is not int
                 or grant["accessGrantGeneration"] < 1
             ):
                 raise ValueError("CONTROL_EXECUTION_ACCESS_INVALID")
+        elif any(k in grant for k in ("accessGrantId", "accessGrantGeneration")):
+            raise ValueError("CONTROL_EXECUTION_ACCESS_INVALID")
         prefix = (
             "device-eligibility:" if grant["operation"] == "device-profile-verify" else "bootstrap:"
         )

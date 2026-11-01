@@ -1,3 +1,5 @@
+import { nativeCollectionSession as validateNativeCollectionSession } from '../packages/core/src/application/native-device-session';
+import { denyCms as denyCollectionCms } from '../packages/core/src/devices/onboarding';
 import { it, expect } from 'vitest';
 import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -32,6 +34,8 @@ it('temporary diagnostics accepts only a live session-bound profile challenge an
         () => now,
       ),
       () => now,
+      denyCollectionCms,
+      validateNativeCollectionSession,
     );
     const challenge = await collection.challenge('owner', 's'.repeat(43));
     const diagnostics = new ProfileDiagnostics(db, () => now, directory);

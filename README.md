@@ -61,22 +61,19 @@ set +a
 export ISIGN_SERVER_ENV_FILE=/absolute/path/server.env
 ```
 
-Для нового окружения создайте схему БД, ключ хранилища и первого администратора. Команды инициализации требуют прав на создание таблиц и индексов:
+Для нового окружения одной командой создайте текущую схему БД, ключ хранилища и первого администратора. Инициализация требует пустую БД и права на создание таблиц и индексов:
 
 ```sh
 pnpm personal:admin init admin
-pnpm migrate:feather
-pnpm migrate:client-installer
 ```
 
-Используйте приглашение из вывода первой команды для регистрации passkey администратора. Включите native API и запустите сервер разработки:
+Используйте приглашение из вывода команды для регистрации passkey администратора и запустите сервер разработки:
 
 ```sh
-export ISIGN_FEATHER_ENABLED=true
 pnpm dev
 ```
 
-Установщик доступен по `http://localhost:3000`. Native API использует путь `/api/native/v1`. Для production используйте [Dockerfile](backend/deploy/personal/Dockerfile.web), [Compose](backend/deploy/personal/compose.yml) и [конфигурацию nginx](backend/deploy/personal/nginx.conf).
+Установщик доступен по `http://localhost:3000`. Native API использует путь `/api/native/v1`. Native API обязателен; сервер проверяет полную текущую схему БД при запуске. Backend и клиент используют один текущий контракт и обновляются вместе. Для production используйте [Dockerfile](backend/deploy/personal/Dockerfile.web), [Compose](backend/deploy/personal/compose.yml) и [конфигурацию nginx](backend/deploy/personal/nginx.conf).
 
 ## Установщик
 
@@ -91,6 +88,8 @@ ISIGN_CLIENT_VERSION=2.9.0
 ```
 
 В Compose положите файл в каталог `client/` рядом с `compose.yml` и используйте путь `/run/isign/client/ISignClient.ipa`. Контрольная сумма и версия находятся в JSON, который создаёт команда упаковки ниже. Сайт показывает недоступность установки, пока сборка не опубликована и не прошла проверку.
+
+Конфигурация Compose должна использовать команду `node --import tsx backend/scripts/personal-start.ts` и tmpfs для `/app/web/.next/cache`; деплой проверяет эти настройки перед запуском контейнера.
 
 Backend получает IPA из этого файла, подписывает для выбранного устройства и выдаёт ссылку или QR установки. Повторный запрос сохраняет ту же операцию; подготовку можно продолжить после перезагрузки страницы. Управление источниками, библиотекой и пользователями находится в iSign Client.
 

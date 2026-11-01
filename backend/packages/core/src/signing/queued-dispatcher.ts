@@ -1,6 +1,6 @@
 import type { Database } from '../shared/database';
 import { Failure } from '../shared/errors';
-import type { JobKickoff } from './jobs-actions';
+type JobKickoff = (owner: string, job: string, device: string) => Promise<unknown>;
 type Candidate = {
   id: string;
   owner_id: string;

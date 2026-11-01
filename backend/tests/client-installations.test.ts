@@ -7,7 +7,7 @@ import { createDatabase } from './helpers/database';
 import { connectionFixture, deviceFixture, loginFixture } from './helpers/login';
 import { ClientInstallations } from '../packages/core/src/application/client-installations';
 import { LocalClientRelease } from '../packages/core/src/infrastructure/client-release';
-import { JobsActions } from '../packages/core/src/signing/jobs-actions';
+import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
 import { ReceiveUpload } from '../packages/core/src/application/receive-upload';
 import { PersonalObjects, PersonalStorage } from '../packages/core/src/library/personal-storage';
 import { Tickets } from '../packages/core/src/library/tickets';
@@ -37,7 +37,7 @@ async function fixture() {
     retentionMs: 86400000,
   });
   await objects.recover();
-  const jobs = new JobsActions(db, () => 1000),
+  const jobs = new JobLifecycle(db, () => 1000),
     storage = new PersonalStorage(objects),
     receive = new ReceiveUpload(db, storage, jobs);
   const release = new LocalClientRelease({
@@ -62,7 +62,7 @@ async function fixture() {
     release,
     jobs,
     receive,
-    authorization: new RequestAuthorization(db, () => 1000),
+    authorization: new RequestAuthorization(db),
     devices,
     tickets: new Tickets(
       db,
@@ -70,6 +70,7 @@ async function fixture() {
       (owner, device, force) => devices.checkRegistered(owner, device, force),
     ),
     now: () => 1000,
+    ensureSigningReady: async () => {},
   };
   const installer = new ClientInstallations(options);
   return { db, user, connection, device, file, digest, installer, jobs, options, remoteDevice };
@@ -138,15 +139,12 @@ it('returns a stable failed operation after receive interruption and never creat
     (await f.db.query("SELECT id FROM personal_objects WHERE state='live'")).rows,
   ).toHaveLength(0);
 });
-it('fails deployment readiness for absent schema and advertises safe installer unavailability', async () => {
+it('requires the installer table at startup', async () => {
   const f = await fixture();
+  const { assertInitializedDatabase } =
+    await import('../packages/core/src/infrastructure/database-init');
   await f.db.query('DROP TABLE client_installations');
-  await expect(f.installer.assertReady()).rejects.toThrow('CLIENT_INSTALLER_MIGRATION_REQUIRED');
-  expect(await f.installer.release()).toEqual({
-    name: 'iSign Client',
-    available: false,
-    reason: 'CLIENT_INSTALLER_MIGRATION_REQUIRED',
-  });
+  await expect(assertInitializedDatabase(f.db)).rejects.toThrow('DATABASE_UNINITIALIZED');
 });
 it('issues tickets only for the operation artifact under current authority and verified source provenance', async () => {
   const f = await fixture(),
@@ -252,7 +250,7 @@ it('recovers a process-interrupted receive as the same failed operation on resta
     "INSERT INTO client_installations(id,owner_id,request_key,job_id,device_id,release_sha256,receive_started_at,created_at) VALUES('interrupted',$1,$2,$3,$4,$5,1000,1000)",
     [f.user.ownerId, key, submission.jobId, f.device.id, f.digest],
   );
-  await f.jobs.queue.recoverReceiving();
+  await f.jobs.recoverReceiving();
   expect(
     await new ClientInstallations(f.options).begin(f.user.ownerId, { deviceId: f.device.id, key }),
   ).toMatchObject({

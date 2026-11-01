@@ -2,7 +2,7 @@ import { loginFixture, connectionFixture, deviceFixture } from './helpers/login'
 import { it, expect } from 'vitest';
 import { createDatabase } from './helpers/database';
 import { RuntimeQueries } from '../packages/core/src/application/queries';
-import { Service } from '../packages/core/src/application/service';
+import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
 import { AppleSharing } from '../packages/core/src/apple/access';
 
 it('Apple snapshot exposes the single effective connection and revokes recipient uploads immediately', async () => {
@@ -48,10 +48,7 @@ it('Apple snapshot exposes the single effective connection and revokes recipient
 it('public readiness follows current connection generation without exposing full UDID', async () => {
   const db = await createDatabase();
   try {
-    let code = '';
-    const s = new Service(db, {
-      now: () => 10000,
-    });
+    const s = new JobLifecycle(db, () => 10000);
     const login = await loginFixture(s.db, 'snapshot@example.invalid', s.now);
     const c = await connectionFixture(s.db, login.ownerId, 'TEAM-SNAPSHOT');
     const d = await deviceFixture(s.db, login.ownerId, c.id, 'Fixture', '18.0');
@@ -76,14 +73,12 @@ it('public readiness follows current connection generation without exposing full
       [login.ownerId, j.id, c.id, d.id, JSON.stringify({ generation: 1 })],
     );
     const queries = new RuntimeQueries(db, () => 10000);
-    const before = await queries.library(login.ownerId);
-    expect(before.artifacts[0].eligible).toBe(true);
+    const before = await queries.devices(login.ownerId);
+    expect(before[0].status).toBe('ready');
     expect(JSON.stringify(before)).not.toContain(udid);
     await db.query('UPDATE connections SET generation=2 WHERE id=$1', [c.id]);
-    const after = await queries.library(login.ownerId);
-    const devices = await queries.devices(login.ownerId);
-    expect(devices[0].status).toBe('connection_changed');
-    expect(after.artifacts).toHaveLength(0);
+    const after = await queries.devices(login.ownerId);
+    expect(after[0].status).toBe('connection_changed');
     expect(JSON.stringify(after)).not.toContain(udid);
   } finally {
     await db.close();

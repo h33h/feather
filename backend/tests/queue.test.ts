@@ -1,14 +1,12 @@
 import { loginFixture, connectionFixture, deviceFixture } from './helpers/login';
 import { it, expect } from 'vitest';
 import { createDatabase } from './helpers/database';
-import { Service } from '../packages/core/src/application/service';
+import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
 it('lease fencing rejects old heartbeat after recovery', async () => {
   const db = await createDatabase();
   try {
     let now = 10000;
-    const service = new Service(db, {
-      now: () => now,
-    });
+    const service = new JobLifecycle(db, () => now);
     const s = await loginFixture(service.db, 'queue@example.invalid', service.now);
     const connection = await connectionFixture(db, s.ownerId, 'ABCDEFGHIJ');
     await deviceFixture(db, s.ownerId, connection.id, 'Phone', '18.0');

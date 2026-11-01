@@ -4,7 +4,7 @@ import { Failure, id } from '../shared/index';
 export type AppleAccess = {
   ownerId: string;
   connectionId: string;
-  connectionOwnerId?: string;
+  connectionOwnerId: string;
   generation: number;
   accessGrantId?: string | null;
   accessGrantGeneration?: number | null;
@@ -46,7 +46,7 @@ export async function resolveAppleAccess(
 export async function assertAppleAccess(db: QueryDatabase, b: AppleAccess) {
   const actual = await resolveAppleAccess(db, b.ownerId, b.connectionId, b.generation);
   if (
-    (b.connectionOwnerId ?? b.ownerId) !== actual.connectionOwnerId ||
+    b.connectionOwnerId !== actual.connectionOwnerId ||
     (b.accessGrantId ?? null) !== actual.accessGrantId ||
     (b.accessGrantGeneration ?? null) !== actual.accessGrantGeneration
   )

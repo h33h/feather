@@ -22,9 +22,9 @@ struct ISignIdentity: Codable {
     struct Renewal: Codable { let state: String; let reason: String? }
     let renewal: Renewal?
     let state: String
-    let connectionId: String?
-    let connectionGeneration: Int?
-    let teamId: String?
+    let connectionId: String
+    let connectionGeneration: Int
+    let teamId: String
     let identityId: String?
     let revision: Int?
     let certificateSha256: String?
@@ -47,11 +47,11 @@ struct ISignProfiles: Codable {
 struct ISignDescriptor: Decodable { let url: URL; let headers: [String: String]; let expiresAt: Double }
 struct ISignSources: Decodable { let sources: [ISignSource] }
 struct ISignSource: Decodable, Identifiable {
-    let id: String; let name: String; let state: String; let revision: Int?
-    let canonicalUrl: String?; let last_error: String?
+    let id: String; let name: String; let state: String; let revision: Int
+    let canonicalUrl: String?
 }
 struct ISignApple: Decodable {
-    struct Connection: Decodable { let id: String?; let team_id: String?; let state: String; let shared: Bool; let last_error: String?; let identityReady: Bool? }
+    struct Connection: Decodable { let id: String; let team_id: String?; let state: String; let shared: Bool; let last_error: String?; let identityReady: Bool }
     struct Share: Decodable, Identifiable { let id: String; let generation: Int; let state: String; let connectionId: String; let teamId: String; let direction: String; let profileId: String }
     let connection: Connection?; let uploadAllowed: Bool; let shares: [Share]
 }
@@ -71,7 +71,6 @@ struct ISignAdminUsers: Decodable {
     let users: [User]
 }
 struct ISignInvite: Decodable { let token: String; let expiresAt: Double }
-struct ISignOK: Decodable { let ok: Bool? }
 struct ISignFailure: Error, LocalizedError, Decodable {
     let code: String
     var requestId: String? = nil

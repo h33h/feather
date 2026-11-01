@@ -1,6 +1,6 @@
 import type { Database } from '../shared/database';
 import type { ClientReleasePort, ClientReleaseStatus } from '../shared/client-release';
-import type { JobsActions } from '../signing/jobs-actions';
+import type { JobLifecycle } from '../signing/job-lifecycle';
 import type { ReceiveUpload } from './receive-upload';
 import type { Tickets } from '../library/tickets';
 import { Failure, hash, id } from '../shared';
@@ -8,13 +8,13 @@ import { Failure, hash, id } from '../shared';
 type Options = {
   db: Database;
   release: ClientReleasePort;
-  jobs: Pick<JobsActions, 'beginSubmission'>;
+  jobs: Pick<JobLifecycle, 'beginSubmission'>;
   receive: Pick<ReceiveUpload, 'run'>;
   authorization: { requireUpload(owner: string): Promise<void> };
   devices: { checkRegistered(owner: string, device: string): Promise<unknown> };
   tickets: Pick<Tickets, 'issueDetails'>;
   now: () => number;
-  ensureSigningReady?: (owner: string) => Promise<unknown>;
+  ensureSigningReady: (owner: string) => Promise<unknown>;
 };
 type Operation = {
   id: string;
@@ -42,21 +42,7 @@ const authorized = `FROM client_installations i
 /** Only this scenario can choose the fixed, operator-pinned web installation source. */
 export class ClientInstallations {
   constructor(private options: Options) {}
-  async assertReady() {
-    const row = (
-      await this.options.db.query<{ ready: boolean }>(
-        "SELECT count(*)=9 AS ready FROM information_schema.columns WHERE table_schema='public' AND table_name='client_installations' AND column_name IN('id','owner_id','request_key','job_id','device_id','release_sha256','version','receive_started_at','created_at')",
-      )
-    ).rows[0];
-    if (!row?.ready) throw new Failure('CLIENT_INSTALLER_MIGRATION_REQUIRED', 503);
-  }
   async release(): Promise<ClientReleaseStatus> {
-    try {
-      await this.assertReady();
-    } catch (error) {
-      if (!(error instanceof Failure)) throw error;
-      return { name: 'iSign Client', available: false, reason: error.code };
-    }
     return this.options.release.status();
   }
   async begin(
@@ -66,10 +52,9 @@ export class ClientInstallations {
     if (!/^[A-Za-z0-9_-]{1,100}$/.test(input.key) || !input.deviceId || input.deviceId.length > 100)
       throw new Failure('INVALID_REQUEST');
     const o = this.options;
-    await this.assertReady();
     await o.authorization.requireUpload(owner);
     await o.devices.checkRegistered(owner, input.deviceId);
-    await o.ensureSigningReady?.(owner);
+    await o.ensureSigningReady(owner);
     const source = await o.release.open();
     const previous = (
       await o.db.query<Operation>(
@@ -134,7 +119,6 @@ export class ClientInstallations {
     return this.view(owner, operation.id);
   }
   async view(owner: string, operation: string): Promise<ClientInstallation> {
-    await this.assertReady();
     const row = (
       await this.options.db.query<
         Operation & {

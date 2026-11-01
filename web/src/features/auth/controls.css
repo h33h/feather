@@ -17,11 +17,6 @@
     padding-top: var(--space-section);
   }
 }
-
-.store .store-login .login-controls {
-  margin-top: 0;
-  flex: 1;
-}
 .store .login-controls form {
   flex: 1;
 }
@@ -29,32 +24,14 @@
   width: 100%;
   margin: 0;
 }
-@media (max-width: 700px) {
-  .store .store-login .login-controls {
-    margin-top: 0;
-  }
-}
 .store .login-controls {
   display: flex;
   flex-direction: column;
   gap: var(--space-control);
 }
-.store .login-controls details {
-  margin: 0;
-}
-.store .login-controls summary {
-  text-align: center;
-  list-style: none;
-}
-.store .login-controls summary::-webkit-details-marker {
-  display: none;
-}
 @media (max-width: 700px) {
   .store .login-controls {
     margin-top: auto;
-  }
-  .store .login-controls:has(details[open]) {
-    margin-top: 0;
   }
 }
 .store .login-controls .login-switch {
@@ -84,7 +61,6 @@
 .store .login-controls input {
   min-height: 48px;
 }
-.store .login-failure,
 .store .invite-login .inline-error {
   margin: 0;
   padding: var(--space-group) var(--space-control);

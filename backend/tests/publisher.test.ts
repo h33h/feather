@@ -1,17 +1,18 @@
+import { SessionService } from '../packages/core/src/auth/sessions';
+import { ConnectionLifecycle } from '../packages/core/src/apple/connection-lifecycle';
+import { createHash } from 'node:crypto';
 import { loginFixture, connectionFixture, deviceFixture } from './helpers/login';
 import { it, expect } from 'vitest';
 import type { Database } from '../packages/core/src/shared/database';
 import { createDatabase } from './helpers/database';
-import { Service } from '../packages/core/src/application/service';
-import { Publisher, digest, type VerifiedReport } from '../packages/core/src/signing/publisher';
+import { JobLifecycle } from '../packages/core/src/signing/job-lifecycle';
+import { Publisher } from '../packages/core/src/signing/publisher';
+import type { VerifiedReport } from '../packages/core/src/shared/runner-contracts';
 it('publishes only bound attested verified bytes and fences disconnect and replay', async () => {
   const db = await createDatabase();
   try {
-    let code = '';
     const now = () => 10000,
-      s = new Service(db, {
-        now,
-      });
+      s = new JobLifecycle(db, now);
     const login = await loginFixture(s.db, 'publisher@example.invalid', s.now),
       owner = login.ownerId;
     const c = await connectionFixture(s.db, owner, 'TEAM-PUBLISH'),
@@ -34,7 +35,7 @@ it('publishes only bound attested verified bytes and fences disconnect and repla
             for await (const chunk of body) chunks.push(Buffer.from(chunk));
             const bytes = Buffer.concat(chunks);
             objects.set(key, bytes);
-            return { digest: digest(bytes), size: bytes.length };
+            return { digest: createHash('sha256').update(bytes).digest('hex'), size: bytes.length };
           },
           delete: async (key) => {
             objects.delete(key);
@@ -48,12 +49,13 @@ it('publishes only bound attested verified bytes and fences disconnect and repla
       job.id,
       'lease',
       'vm-synthetic-fixture',
-      digest(Buffer.from('synthetic-approved-plan')),
+      createHash('sha256').update(Buffer.from('synthetic-approved-plan')).digest('hex'),
+      999999999,
     );
     const bytes = Buffer.from('synthetic signed result, no executable');
     const report: VerifiedReport = {
       ...grant,
-      artifactDigest: digest(bytes),
+      artifactDigest: createHash('sha256').update(bytes).digest('hex'),
       bundleId: 'test.fixture',
       version: '1',
       title: 'Fixture',
@@ -137,9 +139,14 @@ it('publishes only bound attested verified bytes and fences disconnect and repla
       job2.id,
       'lease2',
       'vm-synthetic-fixture',
-      digest(Buffer.from('synthetic-approved-plan')),
+      createHash('sha256').update(Buffer.from('synthetic-approved-plan')).digest('hex'),
+      999999999,
     );
-    await s.disconnect(login.token, login.csrf, 'http://localhost:3000', 'http://localhost:3000');
+    await new ConnectionLifecycle(
+      s.db,
+      () => s.now,
+      new SessionService(s.db, { now: () => s.now }),
+    ).disconnect(login.token, login.csrf, 'http://localhost:3000', 'http://localhost:3000');
     await expect(
       publisher.publish({ ...report, ...grant2 }, 'synthetic-trusted-fixture', stream()),
     ).rejects.toThrow('STALE_EXECUTOR_GRANT');
@@ -150,8 +157,8 @@ it('publishes only bound attested verified bytes and fences disconnect and repla
 });
 it('verifies canonical executor HMAC and refuses changed nonce', async () => {
   const { createHmac } = await import('node:crypto');
-  const { HmacExecutorAttestor, canonicalReport } =
-    await import('../packages/core/src/signing/publisher');
+  const { HmacExecutorAttestor } = await import('../packages/core/src/signing/publisher');
+  const { canonicalReport } = await import('../packages/core/src/shared/canonical-json');
   const key = Buffer.alloc(32, 9),
     attestor = new HmacExecutorAttestor(key);
   const report = {

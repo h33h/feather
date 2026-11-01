@@ -56,6 +56,7 @@ jobs:
       - run: pnpm design:check
       - run: pnpm lint:python
       - run: pnpm check:hooks
+      - run: node --test backend/scripts/browser-declarations.test.mjs
       - run: pnpm test:deploy
       - run: pnpm typecheck
       - run: pnpm lint

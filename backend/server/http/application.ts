@@ -13,46 +13,23 @@ type ServiceNames =
   | 'clientInstaller'
   | 'queries'
   | 'catalogs'
-  | 'tickets'
-  | 'importer'
-  | 'jobs'
-  | 'jobRequests'
-  | 'history'
-  | 'authorization'
-  | 'lifecycle'
   | 'auth'
-  | 'admin'
   | 'devices'
   | 'collections'
-  | 'sharing';
+  | 'sharing'
+  | 'sessions'
+  | 'deviceActions'
+  | 'connections';
 export type HttpApplication = {
   [K in ServiceNames]: Operations<Runtime[K]>;
 } & Pick<
   Runtime,
-  | 'connectApple'
-  | 'receiveUpload'
-  | 'receiveDeviceCallback'
-  | 'bootstrap'
-  | 'ensureSigningReady'
-  | 'readiness'
-  | 'capabilities'
+  'connectApple' | 'receiveDeviceCallback' | 'bootstrap' | 'readiness' | 'capabilities'
 > & {
-    nativeApplication?: Pick<NativeApplication, 'view' | 'command'>;
-    nativeSessions?: Pick<
+    nativeApplication: Pick<NativeApplication, 'view' | 'command'>;
+    nativeSessions: Pick<
       NativeSessions,
       'start' | 'complete' | 'exchange' | 'refresh' | 'authorize' | 'requireFresh' | 'logout'
     >;
     runnerAuthorization?: Operations<NonNullable<Runtime['runnerAuthorization']>>;
-    service: Pick<
-      Runtime['service'],
-      | 'session'
-      | 'authorizeWrite'
-      | 'fresh'
-      | 'logout'
-      | 'selectDevice'
-      | 'removeDevice'
-      | 'disconnect'
-    > & {
-      devices: Pick<Runtime['service']['devices'], 'removeIdentity'>;
-    };
   };

@@ -4,7 +4,6 @@ import type { Release } from './gbox';
 import type { FeatherRepository } from '../../../contracts/src';
 import { normalizeCatalog } from './altstore';
 import { validateUrl, fetchSafe } from './safe-fetch';
-import { fetchIcon } from './icons';
 import { CURRENT_GBOX_URL, CURRENT_PACKAGE_HOSTS, decodeFeed } from './feed';
 type Source = {
   id: string;
@@ -62,13 +61,6 @@ export class CatalogRegistry {
       )
     ).rows;
     for (const user of users) await this.ensureBuiltIn(user.id);
-  }
-  async list(owner: string) {
-    const rows = await this.db.query<Source>(
-      'SELECT id,name,kind,state,revision,last_sync,last_error,refresh_failures,next_refresh_at,refresh_lease_until FROM sources WHERE owner_id=$1 ORDER BY kind,id',
-      [owner],
-    );
-    return rows.rows;
   }
   private async source(owner: string, sourceId: string) {
     const r = await this.db.query<Source>('SELECT * FROM sources WHERE id=$1 AND owner_id=$2', [
@@ -213,7 +205,7 @@ export class CatalogRegistry {
     const lease = id(),
       now = this.now();
     const claimed = await this.db.query(
-      "UPDATE sources SET refresh_token=$3,refresh_lease_until=$4 WHERE id=$1 AND owner_id=$2 AND state NOT IN('disabled','deleted') AND refresh_lease_until<=$5 AND ($6::boolean OR next_refresh_at<=$5 OR (kind='iapps' AND canonical_url IS NULL AND last_error='GBOX_EXPORT_CHANGED')) RETURNING id",
+      "UPDATE sources SET refresh_token=$3,refresh_lease_until=$4 WHERE id=$1 AND owner_id=$2 AND state NOT IN('disabled','deleted') AND refresh_lease_until<=$5 AND ($6::boolean OR next_refresh_at<=$5) RETURNING id",
       [sourceId, owner, lease, now + 60000, now, manual],
     );
     if (!claimed.rows.length)
@@ -258,56 +250,20 @@ export class CatalogRegistry {
   }
   /** A bounded server pass, independent of UI navigation. Claim leases coordinate
    * requests and workers; failed sources retain their owned last-good snapshot. */
-  // GBOX_EXPORT_CHANGED came from the retired pinned-snapshot decoder. Its
-  // backoff must not delay the first attempt with the live iApps decoder.
   async refreshDue(limit = 4) {
     const rows = await this.db.query<{
       id: string;
       owner_id: string;
     }>(
-      "SELECT s.id,s.owner_id FROM sources s JOIN users u ON u.id=s.owner_id WHERE s.state NOT IN('deleted','disabled') AND u.deleted_at IS NULL AND (s.next_refresh_at<=$1 OR (s.kind='iapps' AND s.canonical_url IS NULL AND s.last_error='GBOX_EXPORT_CHANGED')) AND s.refresh_lease_until<=$1 ORDER BY s.next_refresh_at,s.id LIMIT $2",
+      "SELECT s.id,s.owner_id FROM sources s JOIN users u ON u.id=s.owner_id WHERE s.state NOT IN('deleted','disabled') AND u.deleted_at IS NULL AND s.next_refresh_at<=$1 AND s.refresh_lease_until<=$1 ORDER BY s.next_refresh_at,s.id LIMIT $2",
       [this.now(), Math.min(4, Math.max(1, limit))],
     );
     return Promise.allSettled(rows.rows.map((r) => this.refresh(r.owner_id, r.id)));
-  }
-  async releases(owner: string, sourceId: string) {
-    await this.source(owner, sourceId);
-    const rows = await this.db.query<StoredRelease>(
-      'SELECT id,source_id,snapshot,metadata FROM releases WHERE source_id=$1 AND owner_id=$2 ORDER BY id',
-      [sourceId, owner],
-    );
-    return rows.rows.map(({ id, source_id, snapshot, metadata }) => ({
-      id,
-      sourceId: source_id,
-      snapshot,
-      name: metadata.name,
-      appId: metadata.upstreamId,
-      version: metadata.version,
-      displayVersion: metadata.displayVersion,
-      build: metadata.build,
-      bundleId: metadata.bundleId,
-      digest: metadata.digest,
-      description: metadata.description,
-      iconAvailable: !!metadata.iconUrl,
-      downloadAvailable: !!metadata.url,
-    }));
-  }
-  async icon(owner: string, sourceId: string, releaseId: string, snapshot: string) {
-    await this.source(owner, sourceId);
-    const result = await this.db.query<StoredRelease>(
-      'SELECT metadata FROM releases WHERE id=$1 AND source_id=$2 AND owner_id=$3 AND snapshot=$4',
-      [releaseId, sourceId, owner, snapshot],
-    );
-    const url = result.rows[0]?.metadata.iconUrl;
-    if (!url) throw new Failure('NOT_FOUND', 404);
-    return fetchIcon(url, owner + ':' + sourceId + ':' + releaseId + ':' + snapshot);
   }
   async selection(owner: string, sourceId: string, releaseId: string, snapshot: string) {
     const source = await this.source(owner, sourceId);
     if (!['gbox', 'iapps'].includes(source.kind)) throw new Failure('SOURCE_METADATA_ONLY', 409);
     if (source.state !== 'ready') throw new Failure('SOURCE_DISABLED', 409);
-    if (source.last_error === 'GBOX_EXPORT_CHANGED')
-      throw new Failure('SOURCE_REVIEW_REQUIRED', 409);
     const result = await this.db.query<StoredRelease>(
       'SELECT * FROM releases WHERE id=$1 AND source_id=$2 AND owner_id=$3 AND snapshot=$4',
       [releaseId, sourceId, owner, snapshot],

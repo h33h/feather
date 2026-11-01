@@ -42,7 +42,6 @@ private struct ISignSourceDetail: View {
             Section {
                 LabeledContent(.localized("State"), value: source.state)
                 if let url = source.canonicalUrl { Text(url).font(.caption).textSelection(.enabled) }
-                if let error = source.last_error { Text(error).foregroundStyle(.red) }
                 TextField(.localized("Name"), text: $name)
                 Button(.localized("Rename")) { action("rename", ["name": name]) }
                 Button(.localized("Refresh")) { action("refresh") }

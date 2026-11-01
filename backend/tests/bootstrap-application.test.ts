@@ -185,6 +185,7 @@ it('rechecks ready connection authority after opening credentials and clears pla
   const credentials = new AppleClientCredentials(f.db, vault, factory, () => 1000);
   const api = await credentials.ready({
     ownerId: f.owner,
+    connectionOwnerId: f.owner,
     connectionId: f.connection.id,
     generation: 1,
   });

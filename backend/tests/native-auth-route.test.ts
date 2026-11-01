@@ -18,7 +18,7 @@ const nativeSessions = {
 const service = { session: vi.fn(), authorizeWrite: vi.fn() };
 beforeEach(() => {
   vi.resetAllMocks();
-  runtime.mockResolvedValue({ nativeSessions, service });
+  runtime.mockResolvedValue({ nativeSessions, sessions: service });
   nativeSessions.authorize.mockResolvedValue(principal);
   nativeSessions.start.mockResolvedValue({ transactionId: 't' });
   nativeSessions.exchange.mockResolvedValue({ accessToken: 'a' });

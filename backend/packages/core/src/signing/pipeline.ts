@@ -385,13 +385,13 @@ export class PipelineCoordinator {
         }),
       );
       await destroy();
-      if (stage === 'launch') await this.o.provider.retireLaunch?.(lease);
+      if (stage === 'launch') await this.o.provider.retireLaunch(lease);
       const code = timedOut
         ? 'EXECUTOR_DEADLINE'
         : error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
           ? error.code
           : 'PIPELINE_FAILED';
-      if (stage === 'launch' && code === 'RUNNER_BUSY' && this.o.service.deferBusy) {
+      if (stage === 'launch' && code === 'RUNNER_BUSY') {
         await this.o.service.deferBusy({ ownerId, jobId, leaseToken: lease });
         throw error;
       }

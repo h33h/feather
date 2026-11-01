@@ -23,9 +23,7 @@ final class SigningHandler: NSObject {
 	// the options struct is not gonna decode these so
 	// we're just going to do this. If appicon is not
 	// specified, we're not going to modify the app
-	// icon. If the cert pair is not there, fallback
-	// to adhoc signing (if the option is on, otherwise
-	// throw an error
+	// icon.
 	var appIcon: UIImage?
 	var appCertificate: CertificatePair?
 	var managedSigning = false
@@ -118,8 +116,6 @@ final class SigningHandler: NSObject {
 			appCertificate != nil
 		{
 			try await handler.sign()
-//		} else if _options.signingOption == .adhoc {
-//			try await handler.adhocSign()
 		} else if _options.signingOption == .onlyModify {
 			//
 		} else {

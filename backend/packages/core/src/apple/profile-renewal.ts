@@ -1,9 +1,10 @@
 import type { Database } from '../shared/database';
-import type { EligibilityBinding, ControlResource } from '../devices/eligibility';
+import type { ControlResource } from '../devices/eligibility';
+import type { AppleAccess } from './access';
 import type { ExecutorGrant } from '../shared/runner-contracts';
 import { canonicalReport } from '../shared/canonical-json';
 import { Failure, hash, id } from '../shared/index';
-type Binding = EligibilityBinding | ExecutorGrant;
+type Binding = AppleAccess | ExecutorGrant;
 /** A new revision is chosen only after Apple reports the previously owned exact profile expired. */
 export class ProfileRenewal {
   constructor(
@@ -31,12 +32,7 @@ export class ProfileRenewal {
         resource_id: string;
       }>(
         "SELECT resource_id FROM provisioning_operations WHERE owner_id=$1 AND connection_id=$2 AND generation=$3 AND kind='profile-renewal' AND fingerprint=$4",
-        [
-          binding.connectionOwnerId ?? binding.ownerId,
-          binding.connectionId,
-          generation,
-          fingerprint,
-        ],
+        [binding.connectionOwnerId, binding.connectionId, generation, fingerprint],
       );
       const revision = Number(old.rows[0]?.resource_id ?? '0');
       if (!Number.isSafeInteger(revision) || revision < 0 || revision > 1000)
@@ -81,19 +77,14 @@ export class ProfileRenewal {
           resource_id: string;
         }>(
           "SELECT resource_id FROM provisioning_operations WHERE owner_id=$1 AND connection_id=$2 AND generation=$3 AND kind='profile-renewal' AND fingerprint=$4 FOR UPDATE",
-          [
-            binding.connectionOwnerId ?? binding.ownerId,
-            binding.connectionId,
-            generation,
-            fingerprint,
-          ],
+          [binding.connectionOwnerId, binding.connectionId, generation, fingerprint],
         );
         if (Number(r.rows[0]?.resource_id ?? '0') !== revision) return false;
         if (r.rows.length)
           await tx.query(
             "UPDATE provisioning_operations SET resource_id=$5 WHERE owner_id=$1 AND connection_id=$2 AND generation=$3 AND kind='profile-renewal' AND fingerprint=$4",
             [
-              binding.connectionOwnerId ?? binding.ownerId,
+              binding.connectionOwnerId,
               binding.connectionId,
               generation,
               fingerprint,
@@ -105,7 +96,7 @@ export class ProfileRenewal {
             "INSERT INTO provisioning_operations(id,owner_id,connection_id,generation,kind,fingerprint,state,resource_id,created_at) VALUES($1,$2,$3,$4,'profile-renewal',$5,'selected',$6,$7)",
             [
               id(),
-              binding.connectionOwnerId ?? binding.ownerId,
+              binding.connectionOwnerId,
               binding.connectionId,
               generation,
               fingerprint,

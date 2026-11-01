@@ -4,56 +4,28 @@ const secret = { secret_ref: 'secret', owner_id: 'owner', lease_token: 'lease' }
 const session = {
   authenticated: true,
   csrf: 'csrf',
-  profile: { id: 'u', loginName: 'user', role: 'admin', ...secret },
-  capabilities: { runner: true, ...secret },
+  profile: { id: 'u', loginName: 'user', role: 'admin', publicProfileId: 'profile', ...secret },
+  capabilities: {
+    runner: true,
+    appleOnboarding: true,
+    bootstrap: true,
+    deviceEnrollment: true,
+    ...secret,
+  },
   ...secret,
 };
 const fixtures = {
   presentSession: session,
-  presentReleases: {
-    releases: [
-      {
-        id: 'r',
-        sourceId: 's',
-        snapshot: 'snap',
-        name: 'App',
-        displayVersion: '1',
-        version: '1',
-        description: '',
-        url: 'https://secret.test/app.ipa',
-        digest: 'secret',
-        ...secret,
-      },
-    ],
-    ...secret,
-  },
-  presentLibrary: {
-    jobs: [
-      {
-        id: 'j',
-        upload_id: 'u',
-        state: 'signing',
-        reason: null,
-        display_snapshot: { name: 'App', ...secret },
-        warnings: [{ code: 'WARN', componentPath: 'App', ...secret }],
-        ...secret,
-      },
-    ],
-    artifacts: [
-      {
-        id: 'a',
-        job_id: 'j',
-        eligible: true,
-        verified: true,
-        expires_at: 10,
-        valid_until: 10,
-        ...secret,
-      },
-    ],
-    ...secret,
-  },
   presentApple: {
-    connection: { id: 'c', state: 'ready', shared: false, ...secret },
+    connection: {
+      id: 'c',
+      state: 'ready',
+      team_id: 'TEAM',
+      last_error: null,
+      identityReady: true,
+      shared: false,
+      ...secret,
+    },
     uploadAllowed: true,
     shares: [
       {
@@ -71,7 +43,16 @@ const fixtures = {
   },
   presentDevices: {
     devices: [
-      { id: 'd', name: 'iPhone', status: 'ready', os_version: '18', selected: true, ...secret },
+      {
+        id: 'd',
+        name: 'iPhone',
+        status: 'ready',
+        os_version: '18',
+        team_id: 'TEAM',
+        os_version_source: null,
+        selected: true,
+        ...secret,
+      },
     ],
     collectedDevices: [
       {
@@ -99,37 +80,6 @@ const fixtures = {
     ],
     ...secret,
   },
-  presentSources: {
-    sources: [
-      {
-        id: 's',
-        name: 'Catalog',
-        state: 'ready',
-        kind: 'iapps',
-        last_error: null,
-        refresh_lease_until: 20,
-        refresh_token: 'internal',
-        ...secret,
-      },
-    ],
-    ...secret,
-  },
-  presentHistory: {
-    items: [
-      {
-        id: 'j',
-        name: 'App',
-        version: null,
-        finishedAt: 1,
-        state: 'failed',
-        error: null,
-        warnings: [{ code: 'WARN', componentPath: 'App', ...secret }],
-        ...secret,
-      },
-    ],
-    nextCursor: null,
-    ...secret,
-  },
 };
 describe('HTTP DTO presenters', () => {
   for (const [name, fixture] of Object.entries(fixtures)) {
@@ -147,22 +97,12 @@ describe('HTTP DTO presenters', () => {
       expect(() => presenter({})).toThrow();
     });
   }
-  it('retains existing public wire names and refresh progress', () => {
-    expect(presenters.presentSources(fixtures.presentSources).sources[0].refresh_lease_until).toBe(
-      20,
-    );
-    expect(presenters.presentLibrary(fixtures.presentLibrary).jobs[0].upload_id).toBe('u');
+  it('retains existing public session wire names', () => {
     expect(presenters.presentSession(session).profile.loginName).toBe('user');
   });
   it('rejects malformed nested data rather than asserting DTO types', () => {
     expect(() =>
       presenters.presentSession({ ...session, profile: { ...session.profile, role: 'root' } }),
-    ).toThrow();
-    expect(() =>
-      presenters.presentLibrary({
-        ...fixtures.presentLibrary,
-        jobs: [{ ...fixtures.presentLibrary.jobs[0], warnings: [{ code: 1 }] }],
-      }),
     ).toThrow();
   });
 });
@@ -175,6 +115,7 @@ it('preserves nullable database device fields instead of failing an existing dev
           name: 'iPhone',
           status: 'pending',
           os_version: null,
+          team_id: null,
           os_version_source: null,
           selected: false,
         },

@@ -58,18 +58,4 @@ final class ZsignHandler {
 			}
 		)
 	}
-	
-	func adhocSign() async throws {
-		let _ = Zsign.sign(
-			appPath: _appUrl.relativePath,
-			entitlementsPath: _options.appEntitlementsFile?.path ?? "",
-			adhoc: true,
-			removeProvision: !_options.removeProvisioning,
-			completion: { success in
-				if !success {
-					self.hadError = SigningFileHandlerError.signFailed
-				}
-			}
-		)
-	}
 }

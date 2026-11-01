@@ -47,7 +47,7 @@ function CompletedStep({
 export default function Installer() {
   const state = useInstaller();
   const accountReady =
-    state.apple.connection?.state === 'ready' && state.apple.connection.identityReady !== false;
+    state.apple.connection?.state === 'ready' && state.apple.connection.identityReady;
   const loggedIn = !!state.session;
   const step = !accountReady ? 1 : !state.deviceId ? 2 : 3;
   const phase = !loggedIn ? 'auth' : step === 1 ? 'account' : step === 2 ? 'device' : 'install';
@@ -65,7 +65,7 @@ export default function Installer() {
     <InstallerAccount
       key={state.session.profile.id}
       apple={state.apple}
-      profileId={state.session.profile.publicProfileId ?? ''}
+      profileId={state.session.profile.publicProfileId}
       api={state.api}
       action={state.action}
       busy={state.busy}
@@ -295,7 +295,7 @@ export default function Installer() {
                           start={state.start}
                           busy={state.busy}
                           eligible={accountReady && !!state.deviceId}
-                          runnerAvailable={state.session!.capabilities?.runner === true}
+                          runnerAvailable={state.session!.capabilities.runner}
                           releaseAvailable={!!state.release?.available}
                           releaseLoading={!state.release}
                           releaseReason={state.release?.reason}

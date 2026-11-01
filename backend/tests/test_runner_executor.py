@@ -19,6 +19,7 @@ class ExecutorTests(unittest.TestCase):
         self.root = pathlib.Path(self.temp.name).resolve()
         self.commands = []
         self.grant = dict(
+            connectionOwnerId="o",
             ownerId="o",
             jobId="j",
             leaseToken="l",
@@ -85,6 +86,8 @@ class ExecutorTests(unittest.TestCase):
             profiles={},
         )
         for c in self.components:
+            c["sourceBundleId"] = c["bundleId"]
+            c["sourceEntitlements"] = dict(c["entitlements"])
             if c["profileRequired"]:
                 self.task["profiles"][c["bundleId"]] = {
                     **self.task["identity"],
@@ -105,6 +108,14 @@ class ExecutorTests(unittest.TestCase):
     def run_task(self):
         return executor.validate_plan(self.task, self.grant, self.root, int(time.time() * 1000))
 
+    def test_current_task_requires_explicit_source_identity(self):
+        for component in self.components:
+            component["sourceBundleId"] = component["bundleId"]
+            component["sourceEntitlements"] = dict(component["entitlements"])
+        self.components[0].pop("sourceBundleId")
+        with self.assertRaisesRegex(ValueError, "SOURCE_IDENTITY_REQUIRED"):
+            self.run_task()
+
     def add_library(self):
         import struct
 
@@ -123,6 +134,8 @@ class ExecutorTests(unittest.TestCase):
             entitlements={},
             profileRequired=False,
         )
+        component["sourceBundleId"] = component["bundleId"]
+        component["sourceEntitlements"] = {}
         self.components.append(component)
         return component
 
@@ -234,6 +247,7 @@ class ExecutorTests(unittest.TestCase):
     def test_dotless_framework_id_and_unchanged_metadata_survive_app_mapping(self):
         framework = next(c for c in self.components if c["kind"] == "framework")
         framework["bundleId"] = "FixtureKit"
+        framework["sourceBundleId"] = "FixtureKit"
         path = self.root / framework["path"] / "Info.plist"
         info = plistlib.loads(path.read_bytes())
         info.update(

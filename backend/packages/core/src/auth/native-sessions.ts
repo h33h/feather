@@ -383,14 +383,6 @@ export class NativeSessions {
 }
 /** Lifecycle invalidation survives unblocking and prevents pending handoff redemption. */
 export async function invalidateNativeSessions(tx: QueryDatabase, owner: string, now: number) {
-  if (
-    !(
-      await tx.query<{ present: boolean }>(
-        "SELECT to_regclass('public.native_sessions') IS NOT NULL AS present",
-      )
-    ).rows[0]?.present
-  )
-    return;
   await tx.query(
     'UPDATE native_sessions SET revoked_at=$2 WHERE owner_id=$1 AND revoked_at IS NULL',
     [owner, now],

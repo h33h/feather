@@ -1,7 +1,6 @@
-import { assertAppleAccess, lockPrincipalConnections, type AppleAccess } from '../apple/access';
-import { createHash } from 'node:crypto';
+import { assertAppleAccess, type AppleAccess } from '../apple/access';
 import type { Database } from '../shared/database';
-import { Failure, hash, id, token } from '../shared/index';
+import { Failure, hash, id } from '../shared/index';
 export const normalizeUdid = (value: string) => {
   const udid = value.trim().toUpperCase();
   if (!/^(?:[0-9A-F]{40}|[0-9A-F]{8}-[0-9A-F]{16})$/.test(udid)) throw new Failure('INVALID_UDID');
@@ -63,108 +62,7 @@ export class DeviceOnboarding {
     private db: Database,
     private api: DeviceApi | DeviceApiFactory,
     private now: () => number,
-    private verify: CmsVerifier = denyCms,
   ) {}
-  async challenge(owner: string, connection: string, sessionToken?: string) {
-    const raw = token(),
-      challengeId = id();
-    const result = await this.db.query<{
-      generation: number;
-      connection_owner_id: string;
-      access_grant_id: string | null;
-      access_grant_generation: number | null;
-    }>(
-      "SELECT generation,connection_owner_id,access_grant_id,access_grant_generation FROM apple_connections WHERE id=$1 AND owner_id=$2 AND state='ready'",
-      [connection, owner],
-    );
-    if (!result.rows[0]) throw new Failure('CONNECTION_UNAVAILABLE', 409);
-    const pending = await this.db.query<{
-      count: number;
-    }>(
-      'SELECT COUNT(*)::integer AS count FROM device_challenges WHERE owner_id=$1 AND consumed_at IS NULL AND expires_at>$2',
-      [owner, this.now()],
-    );
-    if (pending.rows[0].count >= 10) throw new Failure('DEVICE_CHALLENGE_LIMIT', 429);
-    await this.db.query(
-      'INSERT INTO device_challenges(id,owner_id,connection_id,generation,token_hash,expires_at,session_hash,connection_owner_id,access_grant_id,access_grant_generation) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
-      [
-        challengeId,
-        owner,
-        connection,
-        result.rows[0].generation,
-        hash(raw),
-        this.now() + 600000,
-        sessionToken ? hash(sessionToken) : null,
-        result.rows[0].connection_owner_id,
-        result.rows[0].access_grant_id,
-        result.rows[0].access_grant_generation,
-      ],
-    );
-    return { challenge: raw, expiresAt: this.now() + 600000 };
-  }
-  async callback(raw: string, body: Buffer) {
-    if (!/^[A-Za-z0-9_-]{43}$/.test(raw) || body.length === 0 || body.length > 65536)
-      throw new Failure('INVALID_DEVICE_CALLBACK');
-    const payload = await this.verify(body);
-    if (
-      !payload.signatureVerified ||
-      !payload.issuerTrusted ||
-      !payload.deviceCertificate ||
-      payload.challenge !== raw ||
-      (payload.product !== undefined && !/^iPhone\d+,\d+$/.test(payload.product)) ||
-      (payload.version !== undefined && !/^\d+(?:\.\d+){0,2}$/.test(payload.version))
-    )
-      throw new Failure('INVALID_DEVICE_CALLBACK');
-    const udid = normalizeUdid(payload.udid);
-    return this.db.transaction(async (tx) => {
-      const pending = (
-        await tx.query<{
-          connection_id: string;
-        }>('SELECT connection_id FROM device_challenges WHERE token_hash=$1', [hash(raw)])
-      ).rows[0];
-      if (!pending) throw new Failure('CHALLENGE_EXPIRED_OR_USED', 410);
-      await tx.query('SELECT pg_advisory_xact_lock(736490)');
-      await tx.query('SELECT id FROM connections WHERE id=$1 FOR UPDATE', [pending.connection_id]);
-      await tx.query(
-        "SELECT d.id FROM device_challenges d JOIN apple_connections c ON c.id=d.connection_id AND c.owner_id=d.owner_id JOIN users u ON u.id=d.owner_id WHERE d.token_hash=$1 AND d.consumed_at IS NULL AND d.expires_at>$2 AND (d.session_hash IS NULL OR EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=d.session_hash AND s.owner_id=d.owner_id AND s.expires_at>$2)) AND c.generation=d.generation AND c.state='ready' AND d.connection_owner_id=c.connection_owner_id AND d.access_grant_id IS NOT DISTINCT FROM c.access_grant_id AND d.access_grant_generation IS NOT DISTINCT FROM c.access_grant_generation AND u.deleted_at IS NULL FOR UPDATE OF d,u",
-        [hash(raw), this.now()],
-      );
-      const row = await tx.query<{
-        owner_id: string;
-        connection_id: string;
-        generation: number;
-        connection_owner_id: string;
-        access_grant_id: string | null;
-        access_grant_generation: number | null;
-      }>(
-        "UPDATE device_challenges d SET consumed_at=$2 WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>$2 AND (d.session_hash IS NULL OR EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=d.session_hash AND s.owner_id=d.owner_id AND s.expires_at>$2)) AND EXISTS(SELECT 1 FROM apple_connections c WHERE c.id=d.connection_id AND c.owner_id=d.owner_id AND c.generation=d.generation AND c.state='ready' AND d.connection_owner_id=c.connection_owner_id AND d.access_grant_id IS NOT DISTINCT FROM c.access_grant_id AND d.access_grant_generation IS NOT DISTINCT FROM c.access_grant_generation AND EXISTS(SELECT 1 FROM users u WHERE u.id=c.owner_id AND u.deleted_at IS NULL)) RETURNING owner_id,connection_id,generation,connection_owner_id,access_grant_id,access_grant_generation",
-        [hash(raw), this.now()],
-      );
-      const challenge = row.rows[0];
-      if (!challenge) throw new Failure('CHALLENGE_EXPIRED_OR_USED', 410);
-      const result = await tx.query<{
-        id: string;
-        status: string;
-      }>(
-        "INSERT INTO devices(id,owner_id,connection_id,name,status,os_version,udid,udid_hash,connection_generation,enrollment_verified_at,enrollment_cms_sha256,connection_owner_id,access_grant_id,access_grant_generation) VALUES($1,$2,$3,'iPhone','collected',$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(owner_id,connection_id,udid_hash) WHERE udid_hash IS NOT NULL DO UPDATE SET os_version=COALESCE($4,devices.os_version),enrollment_verified_at=$8,enrollment_cms_sha256=$9,connection_generation=$7,connection_owner_id=$10,access_grant_id=$11,access_grant_generation=$12,status=CASE WHEN devices.connection_generation=$7 AND devices.access_grant_id IS NOT DISTINCT FROM $11 AND devices.access_grant_generation IS NOT DISTINCT FROM $12 AND devices.status!='locally_removed' THEN devices.status ELSE 'collected' END,apple_resource_id=CASE WHEN devices.connection_generation=$7 AND devices.access_grant_id IS NOT DISTINCT FROM $11 AND devices.access_grant_generation IS NOT DISTINCT FROM $12 THEN devices.apple_resource_id ELSE NULL END RETURNING id,status",
-        [
-          id(),
-          challenge.owner_id,
-          challenge.connection_id,
-          payload.version ?? null,
-          udid,
-          hash(udid),
-          challenge.generation,
-          this.now(),
-          createHash('sha256').update(body).digest('hex'),
-          challenge.connection_owner_id,
-          challenge.access_grant_id,
-          challenge.access_grant_generation,
-        ],
-      );
-      return { ...result.rows[0], udid: '••••' + udid.slice(-4) };
-    });
-  }
   private freshDevices = new Map<
     string,
     {
@@ -264,13 +162,9 @@ export class DeviceOnboarding {
             ownerId: owner,
             connectionId: d.connection_id,
             generation: d.connection_generation,
-            ...(d.connection_owner_id !== owner
-              ? {
-                  connectionOwnerId: d.connection_owner_id,
-                  accessGrantId: d.access_grant_id,
-                  accessGrantGeneration: d.access_grant_generation,
-                }
-              : {}),
+            connectionOwnerId: d.connection_owner_id,
+            accessGrantId: d.access_grant_id,
+            accessGrantGeneration: d.access_grant_generation,
           })
         : this.api;
     const matches = await api.find(d.udid);
@@ -301,21 +195,6 @@ export class DeviceOnboarding {
     if (!updated.rows.length) throw new Failure('CONNECTION_CHANGED', 409);
     return { id: device, status: next, udid: '••••' + d.udid.slice(-4) };
   }
-  async select(owner: string, device: string) {
-    await this.db.transaction(async (tx) => {
-      await tx.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [owner]);
-      const found = await tx.query(
-        "SELECT id FROM devices WHERE id=$1 AND owner_id=$2 AND status!='locally_removed'",
-        [device, owner],
-      );
-      if (!found.rows.length) throw new Failure('DEVICE_NOT_FOUND', 404);
-      await tx.query('UPDATE devices SET selected=false WHERE owner_id=$1', [owner]);
-      await tx.query('UPDATE devices SET selected=true WHERE id=$1 AND owner_id=$2', [
-        device,
-        owner,
-      ]);
-    });
-  }
   async register(owner: string, device: string, slotConsent: boolean) {
     const row = await this.db.query<{
       udid: string;
@@ -338,13 +217,9 @@ export class DeviceOnboarding {
             ownerId: owner,
             connectionId: d.connection_id,
             generation: d.connection_generation,
-            ...(d.connection_owner_id !== owner
-              ? {
-                  connectionOwnerId: d.connection_owner_id,
-                  accessGrantId: d.access_grant_id,
-                  accessGrantGeneration: d.access_grant_generation,
-                }
-              : {}),
+            connectionOwnerId: d.connection_owner_id,
+            accessGrantId: d.access_grant_id,
+            accessGrantGeneration: d.access_grant_generation,
           })
         : this.api;
     let matches = await api.find(d.udid);

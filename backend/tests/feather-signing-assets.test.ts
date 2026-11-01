@@ -127,24 +127,14 @@ it('explicit owner revoke destroys key', async () => {
     ).rows,
   ).toHaveLength(0);
 });
-it('requires client schema only with native feature enabled and additive migration upgrades old schema', async () => {
+it('requires signing identity and profile schema during every startup', async () => {
   const f = await featherFixture();
   await f.db.query("UPDATE users SET role='admin' WHERE id='o'");
   const { assertInitializedDatabase } =
     await import('../packages/core/src/infrastructure/database-init');
-  await f.db.exec('DROP TABLE feather_profile_operations; DROP TABLE feather_signing_identities;');
   await expect(assertInitializedDatabase(f.db)).resolves.toBeUndefined();
-  await expect(assertInitializedDatabase(f.db, { native: true })).rejects.toThrow(
-    'DATABASE_UNINITIALIZED',
-  );
-  const { readFile } = await import('node:fs/promises');
-  await f.db.exec(
-    await readFile('backend/packages/db/migrations/20261101-feather-signing.sql', 'utf8'),
-  );
-  await f.db.exec(
-    await readFile('backend/packages/db/migrations/20261101-feather-renewal.sql', 'utf8'),
-  );
-  await expect(assertInitializedDatabase(f.db, { native: true })).resolves.toBeUndefined();
+  await f.db.exec('DROP TABLE feather_profile_operations; DROP TABLE feather_signing_identities;');
+  await expect(assertInitializedDatabase(f.db)).rejects.toThrow('DATABASE_UNINITIALIZED');
 });
 it.each(['disconnected', 'deleted'])(
   'maintenance destroys client material after %s without remote revoke',
