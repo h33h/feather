@@ -81,7 +81,6 @@ export async function removeProfileRows(tx: QueryDatabase, ownerId: string, now:
     [ownerId],
   );
   await tx.query('DELETE FROM releases WHERE owner_id=$1', [ownerId]);
-  await tx.query('DELETE FROM selections WHERE owner_id=$1', [ownerId]);
   await tx.query('UPDATE jobs SET display_snapshot=NULL WHERE owner_id=$1', [ownerId]);
   await tx.query('DELETE FROM audit WHERE owner_id=$1', [ownerId]);
 }

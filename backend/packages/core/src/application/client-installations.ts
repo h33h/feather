@@ -1,16 +1,16 @@
 import type { Database } from '../shared/database';
 import type { ClientReleasePort, ClientReleaseStatus } from '../shared/client-release';
 import type { JobLifecycle } from '../signing/job-lifecycle';
-import type { ReceiveUpload } from './receive-upload';
 import type { Tickets } from '../library/tickets';
+import type { StoragePort } from '../library/storage-contract';
+import { assertUploadAccess } from '../library/access';
 import { Failure, hash, id } from '../shared';
 
 type Options = {
   db: Database;
   release: ClientReleasePort;
-  jobs: Pick<JobLifecycle, 'beginSubmission'>;
-  receive: Pick<ReceiveUpload, 'run'>;
-  authorization: { requireUpload(owner: string): Promise<void> };
+  jobs: Pick<JobLifecycle, 'beginClientInstallation' | 'completeSource' | 'failReceiving'>;
+  storage: Pick<StoragePort, 'upload'>;
   devices: { checkRegistered(owner: string, device: string): Promise<unknown> };
   tickets: Pick<Tickets, 'issueDetails'>;
   now: () => number;
@@ -37,7 +37,7 @@ const authorized = `FROM client_installations i
  JOIN uploads u ON u.id=j.upload_id AND u.owner_id=j.owner_id
  JOIN apple_connections c ON c.id=j.connection_id AND c.owner_id=j.owner_id AND c.generation=j.connection_generation AND c.state='ready'
  JOIN signing_devices d ON d.id=j.device_id AND d.owner_id=j.owner_id AND d.connection_id=j.connection_id AND d.connection_generation=c.generation AND d.status='ready'
- WHERE i.id=$1 AND i.owner_id=$2 AND u.provenance->>'kind'='isign-client' AND u.provenance->>'sha256'=i.release_sha256
+ WHERE i.id=$1 AND i.owner_id=$2
  AND (j.state IN('receiving','failed','cancelled') OR u.digest=i.release_sha256)`;
 /** Only this scenario can choose the fixed, operator-pinned web installation source. */
 export class ClientInstallations {
@@ -52,7 +52,7 @@ export class ClientInstallations {
     if (!/^[A-Za-z0-9_-]{1,100}$/.test(input.key) || !input.deviceId || input.deviceId.length > 100)
       throw new Failure('INVALID_REQUEST');
     const o = this.options;
-    await o.authorization.requireUpload(owner);
+    await assertUploadAccess(o.db, owner);
     await o.devices.checkRegistered(owner, input.deviceId);
     await o.ensureSigningReady(owner);
     const source = await o.release.open();
@@ -67,13 +67,11 @@ export class ClientInstallations {
       (previous.device_id !== input.deviceId || previous.release_sha256 !== source.digest)
     )
       throw new Failure('IDEMPOTENCY_BINDING_MISMATCH', 409);
-    const provenance = { kind: 'isign-client', sha256: source.digest };
-    const submission = await o.jobs.beginSubmission(owner, {
+    const submission = await o.jobs.beginClientInstallation(owner, {
       deviceId: input.deviceId,
       key: 'client_' + hash(input.key),
-      name: 'iSign Client.ipa',
-      source: 'upload',
-      provenance,
+      releaseSha256: source.digest,
+      version: source.version,
     });
     // A crash before insertion is recovered via the same durable job idempotency key.
     await o.db.query(
@@ -108,12 +106,14 @@ export class ClientInstallations {
     );
     if (claimed.rows.length) {
       try {
-        await o.receive.run(owner, submission.uploadId, source.bytes, undefined, {
-          expectedDigest: source.digest,
-          provenance,
-        });
-      } catch {
-        /* ReceiveUpload records the terminal failure and cleans up partial storage. */
+        await o.storage.upload(owner, source.bytes, submission);
+        await o.jobs.completeSource(owner, submission.jobId);
+      } catch (error) {
+        await o.jobs.failReceiving(
+          owner,
+          submission.jobId,
+          error instanceof Failure ? error.code : 'UPLOAD_INTERRUPTED',
+        );
       }
     }
     return this.view(owner, operation.id);

@@ -172,18 +172,6 @@ export function loadProviderConfig(env: Record<string, string | undefined>): Per
     },
   };
 }
-export function providerDiagnostics(config: PersonalConfig) {
-  return {
-    mode: config.mode,
-    origin: config.origin,
-    auth: 'passkey',
-    database: 'postgres',
-    objects: 'private-filesystem',
-    kms: 'local-envelope',
-    runner: 'isolated',
-    credentials: '[REDACTED]',
-  };
-}
 /** Consume trusted-provider metadata without permitting an unbounded response allocation. */
 export async function boundedResponseText(response: Response, maxBytes: number) {
   const declared = response.headers.get('content-length');

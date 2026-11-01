@@ -1,3 +1,4 @@
+import { queuedJobFixture } from './helpers/job';
 import { createHash } from 'node:crypto';
 import { ownAuthority } from './helpers/seed-authority';
 import { bindOwnFixture } from './helpers/login';
@@ -62,7 +63,7 @@ for (const mode of [
       if (mode === 'build-os' || mode === 'build-os-wrong-binding')
         await db.query("UPDATE devices SET os_version='23A345' WHERE id='d'");
       await ownAuthority(db);
-      const job = await service.enqueue('o', 'u', 'synthetic');
+      const job = await queuedJobFixture(service, 'o', 'u', 'synthetic');
       await db.query(
         "UPDATE jobs SET state='queued',connection_id='c',connection_generation=1 WHERE id=$1",
         [job.id],
@@ -222,7 +223,6 @@ for (const mode of [
           upload: async () => {
             throw Error();
           },
-          recoverInterrupted: async () => {},
           cleanup: async () => {},
         },
         canPreserve: async () => {

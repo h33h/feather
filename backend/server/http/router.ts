@@ -47,7 +47,7 @@ export async function handle(request: NextRequest) {
       throw new Failure('INVALID_HOST', 403);
     if (
       !target.startsWith('native/v1/') &&
-      !target.startsWith('runner/') &&
+      target !== 'internal/runner/authorize' &&
       !browserRoute(target, request.method)
     )
       throw new Failure('NOT_FOUND', 404);

@@ -1,12 +1,11 @@
 import { normalizeSigningInput } from './normalization';
 import { assertJobAccess } from '../apple/access-lifecycle';
 import type { Database } from '../shared/database';
-import { Failure, hash } from '../shared/index';
+import { Failure } from '../shared/index';
 import { normalizeUdid } from '../devices/onboarding';
 import type { JobLeaseService } from './job-lifecycle';
 import type { Publisher } from './publisher';
 import type { ExecutorGrant, VerifiedReport } from '../shared/runner-contracts';
-import { canonicalReport } from '../shared/canonical-json';
 import type { DisposableExecutor, ExecutorProvider } from './executor-provider';
 import type { StoragePort } from '../library/storage-contract';
 import { buildPlan, type Component, type Profile } from './policy';
@@ -210,22 +209,11 @@ export class PipelineCoordinator {
       )
         throw new Failure('ANALYSIS_REPORT_INVALID');
       validateSourceRemovals(a.components, a.removedExtensions);
-      await this.o.db.query(
-        "UPDATE uploads SET metadata=$3,provenance=COALESCE(provenance,'{}'::jsonb)||$4::jsonb WHERE id=$1 AND owner_id=$2",
-        [
-          r.rows[0].upload_id,
-          ownerId,
-          JSON.stringify(a),
-          JSON.stringify({
-            analysis: {
-              reportDigest: hash(canonicalReport(result.report)),
-              instanceId: vm.id,
-              nonce: grant.taskNonce,
-              generation: grant.connectionGeneration,
-            },
-          }),
-        ],
-      );
+      await this.o.db.query('UPDATE uploads SET metadata=$3 WHERE id=$1 AND owner_id=$2', [
+        r.rows[0].upload_id,
+        ownerId,
+        JSON.stringify(a),
+      ]);
       stage = 'preflight';
       const preflightIdentity = {
         ownerId,

@@ -1,3 +1,4 @@
+import { queuedJobFixture } from './helpers/job';
 import { ownAuthority } from './helpers/seed-authority';
 import { bindOwnFixture } from './helpers/login';
 import { loginFixture, connectionFixture, deviceFixture } from './helpers/login';
@@ -52,7 +53,7 @@ it('authorizes only current jobs and permits cleanup after cancellation without 
       "INSERT INTO uploads(id,owner_id,name,object_key,size,digest,status,created_at,expires_at) VALUES('auth-u',$1,'synthetic.ipa','synthetic',1,'synthetic','uploaded',0,999999)",
       [owner],
     );
-    const j = await s.enqueue(owner, 'auth-u', 'auth');
+    const j = await queuedJobFixture(s, owner, 'auth-u', 'auth');
     await db.query(
       "UPDATE jobs SET state='analyzing',device_id=$2,connection_id=$3,connection_generation=1,lease_token='current',lease_expires=999999 WHERE id=$1",
       [j.id, d.id, c.id],

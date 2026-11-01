@@ -265,7 +265,6 @@ CREATE TABLE uploads (
   digest text NOT NULL,
   status text NOT NULL,
   metadata jsonb,
-  provenance jsonb,
   created_at bigint NOT NULL,
   expires_at bigint NOT NULL,
   delete_requested_at bigint,
@@ -425,24 +424,6 @@ CREATE UNIQUE INDEX owner_device_udid ON public.devices USING btree (owner_id, c
 WHERE
   (udid_hash IS NOT NULL);
 
-CREATE TABLE imports (
-  id text NOT NULL,
-  owner_id text NOT NULL,
-  source_id text NOT NULL,
-  release_id text NOT NULL,
-  snapshot text NOT NULL,
-  state text NOT NULL,
-  upload_id text,
-  created_at bigint NOT NULL,
-  lease_expires bigint NOT NULL DEFAULT 0,
-  attempt_token text,
-  CONSTRAINT imports_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES users (id),
-  CONSTRAINT imports_owner_id_source_id_release_id_snapshot_key UNIQUE (owner_id, source_id, release_id, snapshot),
-  CONSTRAINT imports_pkey PRIMARY KEY (id),
-  CONSTRAINT imports_source_id_owner_id_fkey FOREIGN KEY (source_id, owner_id) REFERENCES sources (id, owner_id),
-  CONSTRAINT imports_upload_id_owner_id_fkey FOREIGN KEY (upload_id, owner_id) REFERENCES uploads (id, owner_id)
-);
-
 CREATE TABLE jobs (
   id text NOT NULL,
   owner_id text NOT NULL,
@@ -565,16 +546,6 @@ CREATE TABLE secret_deletions (
   CONSTRAINT secret_deletions_owner_id_secret_id_key UNIQUE (owner_id, secret_id),
   CONSTRAINT secret_deletions_pkey PRIMARY KEY (id),
   CONSTRAINT secret_deletions_secret_id_owner_id_fkey FOREIGN KEY (secret_id, owner_id) REFERENCES secrets (id, owner_id)
-);
-
-CREATE TABLE selections (
-  owner_id text NOT NULL,
-  source_id text NOT NULL,
-  release_id text NOT NULL,
-  snapshot text NOT NULL,
-  CONSTRAINT selections_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES users (id),
-  CONSTRAINT selections_pkey PRIMARY KEY (owner_id),
-  CONSTRAINT selections_source_id_owner_id_fkey FOREIGN KEY (source_id, owner_id) REFERENCES sources (id, owner_id)
 );
 
 CREATE TABLE artifacts (

@@ -1,3 +1,4 @@
+import { queuedJobFixture } from './helpers/job';
 import { SessionService } from '../packages/core/src/auth/sessions';
 import { ConnectionLifecycle } from '../packages/core/src/apple/connection-lifecycle';
 import { createHash } from 'node:crypto';
@@ -21,7 +22,7 @@ it('publishes only bound attested verified bytes and fences disconnect and repla
       "INSERT INTO uploads(id,owner_id,name,object_key,size,digest,status,created_at,expires_at) VALUES('upload',$1,'fixture.ipa','source.ipa',1,'source-digest','uploaded',0,999999999)",
       [owner],
     );
-    const job = await s.enqueue(owner, 'upload', 'publish');
+    const job = await queuedJobFixture(s, owner, 'upload', 'publish');
     await db.query(
       "UPDATE jobs SET state='verifying',device_id=$2,lease_token='lease',lease_expires=999999 WHERE id=$1",
       [job.id, d.id],
@@ -129,7 +130,7 @@ it('publishes only bound attested verified bytes and fences disconnect and repla
       "INSERT INTO uploads(id,owner_id,name,object_key,size,digest,status,created_at,expires_at) VALUES('upload2',$1,'fixture.ipa','source2.ipa',1,'source-digest','uploaded',0,999999999)",
       [owner],
     );
-    const job2 = await s.enqueue(owner, 'upload2', 'second');
+    const job2 = await queuedJobFixture(s, owner, 'upload2', 'second');
     await db.query(
       "UPDATE jobs SET state='verifying',device_id=$2,lease_token='lease2',lease_expires=999999 WHERE id=$1",
       [job2.id, d.id],

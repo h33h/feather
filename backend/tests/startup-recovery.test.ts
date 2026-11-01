@@ -8,19 +8,21 @@ it('startup terminates interrupted receiving jobs while preserving queued jobs',
   try {
     const a = await loginFixture(db, 'a', 1000),
       b = await loginFixture(db, 'b', 1000);
+    const devices = new Map<string, string>();
     for (const user of [a, b]) {
       const c = await connectionFixture(db, user.ownerId, user.ownerId);
-      await deviceFixture(db, user.ownerId, c.id, 'Phone', '18.0');
+      const device = await deviceFixture(db, user.ownerId, c.id, 'Phone', '18.0');
+      devices.set(user.ownerId, device.id);
     }
     const queue = new JobLifecycle(db, () => 1000);
-    const receiving = await queue.beginSubmission(a.ownerId, {
-      name: 'A.ipa',
-      source: 'upload',
+    const receiving = await queue.beginClientInstallation(a.ownerId, {
+      deviceId: devices.get(a.ownerId)!,
+      releaseSha256: 'a'.repeat(64),
       key: 'a',
     });
-    const queued = await queue.beginSubmission(b.ownerId, {
-      name: 'B.ipa',
-      source: 'upload',
+    const queued = await queue.beginClientInstallation(b.ownerId, {
+      deviceId: devices.get(b.ownerId)!,
+      releaseSha256: 'b'.repeat(64),
       key: 'b',
     });
     await db.query("UPDATE uploads SET status='ready',digest='hash',size=1 WHERE id=$1", [
