@@ -4,12 +4,12 @@ import { installerApple, installerDevices, mockInstaller } from './helpers/brows
 test('public site only offers installation and passkey invitation sign-in', async ({ page }) => {
   await mockInstaller(page, { authenticated: false });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'iSign Client', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'iSign', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Войти с passkey', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Каталог', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Мои приложения', exact: true })).toHaveCount(0);
   await expect(page.locator('input[accept=".ipa"]')).toHaveCount(0);
-  await page.getByText('Первый вход', { exact: true }).click();
+  await page.getByRole('button', { name: 'Есть приглашение', exact: true }).click();
   await expect(page.getByLabel('Код приглашения', { exact: true })).toBeVisible();
 });
 
@@ -40,15 +40,14 @@ test('own Apple key is submitted only to account setup then account preparation 
     return route.fulfill({ json: { state: 'ready' } });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Своя команда', exact: true }).click();
   await page.getByLabel('Issuer ID', { exact: true }).fill('12345678-1234-1234-1234-123456789abc');
   await page.getByLabel('Key ID', { exact: true }).fill('ABC123DEF4');
-  await page.getByLabel('P8-ключ', { exact: true }).setInputFiles({
+  await page.getByLabel('Ключ .p8', { exact: true }).setInputFiles({
     name: 'AuthKey_ABC123DEF4.p8',
     mimeType: 'application/octet-stream',
     buffer: Buffer.from('synthetic-only-p8'),
   });
-  await page.getByRole('button', { name: 'Подключить аккаунт', exact: true }).click();
+  await page.getByRole('button', { name: 'Подключить', exact: true }).click();
   await expect
     .poll(() => input)
     .toMatchObject({
@@ -61,7 +60,7 @@ test('own Apple key is submitted only to account setup then account preparation 
   await expect(page.getByText('TEAM123456', { exact: false }).first()).toBeVisible();
 });
 
-test('receiving access shows public profile ID and updates when owner grants access', async ({
+test('receiving access uses the menu ID and continues after the owner grants it', async ({
   page,
 }) => {
   const state = await mockInstaller(page, {
@@ -69,11 +68,12 @@ test('receiving access shows public profile ID and updates when owner grants acc
     devices: { devices: [], collectedDevices: [] },
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Доступ от владельца', exact: true }).click();
-  await expect(page.getByLabel('ID профиля iSign', { exact: true })).toHaveValue('profile-public');
+  await page.locator('.installer-profile-trigger').click();
+  await expect(page.locator('[data-profile-id]')).toHaveText('profile-public');
   state.apple = { ...installerApple, connection: { ...installerApple.connection, shared: true } };
-  await page.getByRole('button', { name: 'Проверить доступ', exact: true }).click();
-  await expect(page.getByText('Предоставленный доступ', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('heading', { name: 'Добавьте iPhone', exact: true })).toBeVisible();
 });
 
 test('registers collected device using its Apple binding, with explicit slot consent', async ({
@@ -115,15 +115,10 @@ test('registers collected device using its Apple binding, with explicit slot con
   });
   await page.goto('/');
   await page
-    .getByRole('checkbox', {
-      name: 'Разрешаю зарегистрировать iPhone 16 в Apple-команде TEAM123456',
-      exact: true,
-    })
-    .check();
-  await page
     .getByRole('button', { name: 'Зарегистрировать устройство: iPhone 16', exact: true })
     .click();
   await expect.poll(() => registered).toBe(true);
+  await expect(page.getByRole('heading', { name: 'iSign Client', exact: true })).toBeFocused();
   await expect(
     page.getByRole('button', { name: 'Подготовить установку', exact: true }),
   ).toBeEnabled();
@@ -167,7 +162,7 @@ test('installs only fixed client for selected device and obtains an operation-sc
   );
   await page.goto('/');
   await page.getByRole('button', { name: 'Подготовить установку', exact: true }).click();
-  await page.getByRole('button', { name: 'Показать QR установки', exact: true }).click();
+  await page.getByRole('button', { name: 'Установить', exact: true }).click();
   await expect(
     page.getByRole('img', { name: 'QR установки iSign Client', exact: true }),
   ).toBeVisible();
@@ -228,9 +223,7 @@ test('reload resumes the same installation without resubmitting source', async (
   await expect(page.getByText('Ожидаем очередь на подпись', { exact: true })).toBeVisible();
   ready = true;
   await page.reload();
-  await expect(
-    page.getByRole('button', { name: 'Показать QR установки', exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Установить', exact: true })).toBeVisible();
   expect(submissions).toBe(1);
 });
 
@@ -251,6 +244,7 @@ test('logout fences a late signing submission and clears its browser recovery re
   await page.goto('/');
   await page.getByRole('button', { name: 'Подготовить установку', exact: true }).click();
   await requested;
+  await page.locator('.installer-profile-trigger').click();
   await page.getByRole('button', { name: 'Выйти', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Войти с passkey', exact: true })).toBeVisible();
   try {
@@ -258,9 +252,7 @@ test('logout fences a late signing submission and clears its browser recovery re
   } finally {
     release();
   }
-  await expect(
-    page.getByRole('button', { name: 'Показать QR установки', exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Установить', exact: true })).toHaveCount(0);
   expect(
     await page.evaluate(() => sessionStorage.getItem('isign-client-install:owner')),
   ).toBeNull();
@@ -278,7 +270,8 @@ test('malformed browser recovery state does not prevent installation', async ({ 
 test('theme choice works in the installer and survives reload', async ({ page }) => {
   await mockInstaller(page);
   await page.goto('/');
-  await page.getByRole('combobox', { name: 'Цветовая тема', exact: true }).selectOption('dark');
+  await page.locator('.installer-profile-trigger').click();
+  await page.getByRole('switch', { name: 'Тёмная тема', exact: true }).check();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -330,7 +323,7 @@ test('expired ready artifact can be prepared again after ticket refusal', async 
     return route.fulfill({ status: 409, json: { code: 'CLIENT_INSTALL_NOT_READY' } });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Показать QR установки', exact: true }).click();
+  await page.getByRole('button', { name: 'Установить', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Подготовить заново', exact: true })).toBeEnabled();
 });
 
@@ -391,18 +384,18 @@ test('setup shows one current task instead of future locked forms', async ({ pag
   ).toHaveCount(0);
 });
 
-test('completed device stays compact but remains editable', async ({ page }) => {
+test('device changes live in installation settings and return to installation', async ({
+  page,
+}) => {
   await mockInstaller(page);
   await page.goto('/');
+  await expect(page.getByRole('combobox', { name: 'Устройство для установки' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Параметры установки', exact: true }).click();
+  await page.getByRole('button', { name: 'Изменить устройство', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Ваш iPhone', exact: true })).toBeVisible();
+  await expect(page.getByText('iPhone 16', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
   await expect(
-    page.getByRole('combobox', { name: 'Устройство для установки', exact: true }),
-  ).toHaveCount(0);
-  await page.getByRole('button', { name: /^Изменить: Устройство, iPhone 16/ }).click();
-  await expect(
-    page.getByRole('combobox', { name: 'Устройство для установки', exact: true }),
-  ).toBeVisible();
-  await page.getByRole('button', { name: /^Изменить: Устройство, iPhone 16/ }).click();
-  await expect(
-    page.getByRole('combobox', { name: 'Устройство для установки', exact: true }),
-  ).toHaveCount(0);
+    page.getByRole('button', { name: 'Подготовить установку', exact: true }),
+  ).toBeEnabled();
 });

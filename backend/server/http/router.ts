@@ -21,7 +21,8 @@ function browserRoute(target: string, method: string) {
   if (method === 'GET')
     return (
       ['health', 'client/release', 'session', 'apple', 'devices'].includes(target) ||
-      /^client\/install\/[^/]+$/.test(target)
+      /^client\/install\/[^/]+$/.test(target) ||
+      /^devices\/collected\/[^/]+\/udid$/.test(target)
     );
   if (method !== 'POST') return false;
   return (

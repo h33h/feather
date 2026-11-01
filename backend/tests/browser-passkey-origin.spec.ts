@@ -76,9 +76,11 @@ test('browser passkey registration is cryptographically verified against the con
     route.fulfill({ json: { devices: [], collectedDevices: [] } }),
   );
   await page.goto('/');
-  await page.getByText('Первый вход', { exact: true }).click();
+  await page.getByRole('button', { name: 'Есть приглашение', exact: true }).click();
   await page.getByLabel('Код приглашения', { exact: true }).fill('a'.repeat(43));
   await page.getByRole('button', { name: 'Создать passkey', exact: true }).click();
   await expect.poll(() => verified).toBe(true);
-  await expect(page.getByRole('heading', { name: 'iSign Client', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Подключите аккаунт', exact: true }),
+  ).toBeVisible();
 });

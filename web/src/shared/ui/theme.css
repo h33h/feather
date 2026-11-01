@@ -1,29 +1,59 @@
-.store .theme-select {
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.theme-switch-control {
   position: relative;
-  display: grid;
-  place-items: center;
   flex: none;
-  width: var(--control-target);
-  height: var(--control-target);
-  margin: 0;
-  border-radius: var(--control-radius);
-  color: var(--muted);
+  width: 44px;
+  height: 26px;
 }
-.store .theme-select:hover {
-  background: var(--subtle);
-  color: var(--ink);
-}
-.store .theme-select select {
+.theme-switch-control input {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  min-height: var(--control-target);
-  padding: 0;
+  min-height: 0;
   opacity: 0;
+  margin: 0;
+  z-index: 1;
   cursor: pointer;
 }
-.store .theme-select:has(select:focus-visible) {
-  outline: 3px solid var(--accent);
-  outline-offset: 3px;
+.theme-switch-track {
+  display: block;
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--color-field-border);
+}
+.theme-switch-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-on-action);
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.theme-switch-control input:checked + .theme-switch-track {
+  background: var(--color-action-fill);
+}
+.theme-switch-control input:checked + .theme-switch-track::after {
+  transform: translateX(18px);
+}
+.theme-switch-control input:focus-visible + .theme-switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-switch-track::after {
+    transition: none;
+  }
 }

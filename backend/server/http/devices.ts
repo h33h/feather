@@ -8,6 +8,9 @@ import { body, response } from './common';
 import type { AuthenticatedContext } from './context';
 export async function handleDevices(context: AuthenticatedContext) {
   const { request, target, app, raw, csrf, owner } = context;
+  const reveal = /^devices\/collected\/([^/]+)\/udid$/.exec(target);
+  if (reveal && request.method === 'GET')
+    return response(await app.collections.reveal(owner, reveal[1]));
   if (target === 'devices' && request.method === 'GET')
     return response(
       presentDevices({

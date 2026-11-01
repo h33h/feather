@@ -120,19 +120,6 @@ label {
   padding: 12px;
   border-radius: 50%;
 }
-.reference-dialog .profile-transfer {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.reference-dialog input {
-  width: 100%;
-}
-.reference-dialog .profile-transfer img {
-  margin-inline: auto;
-  max-width: 100%;
-  height: auto;
-}
 .reference-dialog p {
   font-size: 14px;
 }
@@ -151,9 +138,4 @@ label {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
-}
-.theme-select {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }

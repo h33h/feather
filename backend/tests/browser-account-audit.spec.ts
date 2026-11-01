@@ -6,7 +6,8 @@ import { parseTeamKey } from '../packages/core/src/apple/onboarding';
 const emptyApple = { connection: null, shares: [], uploadAllowed: false };
 const emptyDevices = { devices: [], collectedDevices: [] };
 async function openConnectedAccount(page: Page) {
-  await page.locator('.installer-completed-toggle').filter({ hasText: 'TEAM123456' }).click();
+  await page.getByRole('button', { name: 'Параметры установки', exact: true }).click();
+  await page.getByRole('button', { name: 'Посмотреть аккаунт', exact: true }).click();
 }
 
 for (const shared of [false, true]) {
@@ -48,7 +49,9 @@ for (const shared of [false, true]) {
     await page.getByRole('button', { name: label, exact: true }).click();
     await dialog.getByRole('button', { name: label, exact: true }).click();
     await expect.poll(() => disconnects).toBe(1);
-    await expect(page.getByRole('button', { name: 'Своя команда', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Подключите аккаунт', exact: true }),
+    ).toBeVisible();
   });
 }
 
@@ -79,78 +82,53 @@ test('disconnect shows pending and safe local errors without silently closing th
   await expect(dialog.getByRole('button', { name: 'Отмена', exact: true })).toBeEnabled();
 });
 
-test('receiving access copies the public profile ID and reports absence only after a successful check', async ({
+test('receiving access copies the menu ID and reports failed refresh without inventing grant state', async ({
   page,
   context,
 }) => {
   const state = await mockInstaller(page, { apple: emptyApple, devices: emptyDevices });
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Доступ от владельца', exact: true }).click();
-  await expect(page.getByLabel('ID профиля iSign', { exact: true })).toHaveValue('profile-public');
-  await expect(page.getByText('Доступ пока не предоставлен', { exact: false })).toHaveCount(0);
+  await page.locator('.installer-profile-trigger').click();
+  await expect(page.locator('[data-profile-id]')).toHaveText('profile-public');
   await page.getByRole('button', { name: 'Скопировать ID профиля', exact: true }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('profile-public');
-  await page.getByRole('button', { name: 'Проверить доступ', exact: true }).click();
-  await expect(
-    page.getByRole('status').filter({ hasText: 'Доступ пока не предоставлен' }),
-  ).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.route('**/api/apple', (route) =>
     route.fulfill({ status: 503, json: { code: 'SERVER_BUSY' } }),
   );
-  await page.getByRole('button', { name: 'Проверить доступ', exact: true }).click();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(
-    page.getByRole('alert').filter({ hasText: 'Не удалось проверить доступ' }),
+    page.getByRole('alert').filter({ hasText: 'Не удалось обновить аккаунт' }),
   ).toBeVisible();
   await expect(page.getByText('Доступ пока не предоставлен', { exact: false })).toHaveCount(0);
   await page.unroute('**/api/apple');
   state.apple = { ...installerApple, connection: { ...installerApple.connection, shared: true } };
-  await page.getByRole('button', { name: 'Проверить доступ', exact: true }).click();
-  await expect(page.getByText('Предоставленный доступ', { exact: true }).first()).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('heading', { name: 'Добавьте iPhone', exact: true })).toBeVisible();
 });
 
-test('own team guidance identifies Apple credentials, official help and the receiving origin', async ({
+test('own team keeps optional official help collapsed and omits removed captions', async ({
   page,
 }) => {
   await mockInstaller(page, { apple: emptyApple, devices: emptyDevices });
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Своя команда', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
+  await expect(page.getByRole('button', { name: 'Доступ от владельца', exact: true })).toHaveCount(
+    0,
   );
-  await expect(
-    page.getByText('Нужна команда Apple Developer Program', { exact: false }),
-  ).toBeVisible();
-  await expect(
-    page.getByText('Обычного Apple Account для этого недостаточно', { exact: false }),
-  ).toBeVisible();
-  await expect(page.getByText(new URL(page.url()).origin, { exact: false }).first()).toBeVisible();
-  await expect(page.getByText('зашифрованном виде', { exact: false })).toBeVisible();
-  await page.getByText('Где взять Issuer ID, Key ID и P8?', { exact: true }).click();
-  await expect(
-    page.getByText('Users and Access → Integrations → App Store Connect API → Team Keys', {
-      exact: false,
-    }),
-  ).toBeVisible();
+  await expect(page.getByText('Приватный ключ будет отправлен', { exact: false })).toHaveCount(0);
+  const help = page.getByText(
+    'Users and Access → Integrations → App Store Connect API → Team Keys',
+    { exact: false },
+  );
+  await expect(help).toBeHidden();
+  await page.getByText('Где взять ключ?', { exact: true }).click();
+  await expect(help).toBeVisible();
   await expect(
     page.getByRole('link', { name: 'Создание Team API Key — Apple', exact: true }),
   ).toHaveAttribute(
     'href',
     'https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api',
-  );
-  await expect(
-    page.getByRole('link', { name: 'Issuer ID и Key ID — Apple', exact: true }),
-  ).toHaveAttribute(
-    'href',
-    'https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests',
-  );
-  await expect(page.getByLabel('Issuer ID', { exact: true })).toHaveAttribute(
-    'aria-describedby',
-    /issuer-help/,
-  );
-  await expect(page.getByLabel('Key ID', { exact: true })).toHaveAttribute(
-    'aria-describedby',
-    /key-help/,
   );
 });
 
@@ -174,12 +152,12 @@ test('credential field feedback follows the actual server identifier rules witho
   await key.blur();
   await expect(key).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByText('Key ID состоит из 10 букв и цифр', { exact: false })).toBeVisible();
-  await page.getByLabel('P8-ключ', { exact: true }).setInputFiles({
+  await page.getByLabel('Ключ .p8', { exact: true }).setInputFiles({
     name: 'AuthKey_ABC123DEF4.p8',
     mimeType: 'application/octet-stream',
     buffer: Buffer.from('synthetic-only-p8'),
   });
-  await page.getByRole('button', { name: 'Подключить аккаунт', exact: true }).click();
+  await page.getByRole('button', { name: 'Подключить', exact: true }).click();
   expect(connects).toBe(0);
   // These are the same invalid inputs rejected by the real server parser.
   expect(() =>
@@ -212,22 +190,20 @@ test('rejected private key has an associated field error and is cleared after su
   await page.goto('/');
   await page.getByLabel('Issuer ID', { exact: true }).fill('12345678-1234-1234-1234-123456789abc');
   await page.getByLabel('Key ID', { exact: true }).fill('ABC123DEF4');
-  const input = page.getByLabel('P8-ключ', { exact: true });
+  const input = page.getByLabel('Ключ .p8', { exact: true });
   await input.setInputFiles({
     name: 'AuthKey_ABC123DEF4.p8',
     mimeType: 'application/octet-stream',
     buffer: Buffer.from('synthetic-only-p8'),
   });
-  await page.getByRole('button', { name: 'Подключить аккаунт', exact: true }).click();
+  await page.getByRole('button', { name: 'Подключить', exact: true }).click();
   await expect(input).toHaveAttribute('aria-invalid', 'true');
   await expect(input).toHaveAttribute('aria-describedby', /p8-error/);
   await expect(page.getByRole('alert').filter({ hasText: 'исходный файл .p8' })).toBeVisible();
   await expect
     .poll(() => input.evaluate((element) => (element as HTMLInputElement).files?.length))
     .toBe(0);
-  await expect(
-    page.getByRole('button', { name: 'Подключить аккаунт', exact: true }),
-  ).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Подключить', exact: true })).toBeDisabled();
 });
 
 test('reachable error copy avoids retired web paths and provides safe Russian fallbacks', () => {
@@ -289,7 +265,7 @@ for (const code of ['APPLE_ACCESS_ACTION_REQUIRED', 'UNRECOGNIZED_APPLE_FAILURE'
       },
     });
     await page.goto('/');
-    const status = page.locator('.installer-account-state').getByRole('status');
+    const status = page.locator('.installer-account-state');
     await expect(status).toContainText(
       code === 'APPLE_ACCESS_ACTION_REQUIRED' ? 'проверить ключ' : 'Проверьте доступ',
     );
@@ -326,12 +302,12 @@ for (const change of ['logout', 'owner', 'binding']) {
       .getByLabel('Issuer ID', { exact: true })
       .fill('12345678-1234-1234-1234-123456789abc');
     await page.getByLabel('Key ID', { exact: true }).fill('ABC123DEF4');
-    await page.getByLabel('P8-ключ', { exact: true }).setInputFiles({
+    await page.getByLabel('Ключ .p8', { exact: true }).setInputFiles({
       name: 'AuthKey_ABC123DEF4.p8',
       mimeType: 'application/octet-stream',
       buffer: Buffer.from('synthetic-only-p8'),
     });
-    await page.getByRole('button', { name: 'Подключить аккаунт', exact: true }).click();
+    await page.getByRole('button', { name: 'Подключить', exact: true }).click();
     await expect
       .poll(() =>
         page.evaluate(
@@ -340,6 +316,7 @@ for (const change of ['logout', 'owner', 'binding']) {
       )
       .toBe(true);
     if (change === 'logout') {
+      await page.locator('.installer-profile-trigger').click();
       await page.getByRole('button', { name: 'Выйти', exact: true }).click();
       await expect(
         page.getByRole('button', { name: 'Войти с passkey', exact: true }),
@@ -359,7 +336,7 @@ for (const change of ['logout', 'owner', 'binding']) {
         }),
       );
       await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-      await expect(page.locator('.installer-user')).toHaveText('next-owner');
+      await expect(page.locator('.installer-profile-trigger')).toHaveText('profile-next');
       await expect(page.getByLabel('Issuer ID', { exact: true })).toHaveValue('');
     } else {
       state.apple = {
@@ -427,9 +404,8 @@ test('a pending disconnect keeps its original request but drops confirmation and
       connection: { ...installerApple.connection, id: 'next-team', team_id: 'OTHERTEAM1' },
     };
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect(
-      page.locator('.installer-completed-toggle').filter({ hasText: 'OTHERTEAM1' }),
-    ).toBeVisible();
+    await openConnectedAccount(page);
+    await expect(page.getByText('OTHERTEAM1', { exact: true })).toBeVisible();
     await expect(page.getByRole('dialog')).not.toBeVisible();
   } finally {
     release();

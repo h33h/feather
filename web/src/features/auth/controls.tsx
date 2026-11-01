@@ -1,158 +1,140 @@
 'use client';
-import './controls.css';
-import { Field } from '../../shared/ui';
-import { passkeyLogin } from '../../shared/api/passkey-client';
+import Image from 'next/image';
 import { useState } from 'react';
-import { DesignAsset, TaskButton } from '../../shared/ui';
-import { Toast } from '../../shared/ui/toast';
 import {
   startRegistration,
   type PublicKeyCredentialCreationOptionsJSON,
 } from '@simplewebauthn/browser';
+import { Field, TaskButton } from '../../shared/ui';
+import { passkeyLogin } from '../../shared/api/passkey-client';
 import type { Api, Action } from '../../shared/api/contracts';
+import { InstallerScreen } from '../installer/screen';
+
 export function PersonalLogin({
   api,
   action,
   busy,
-  actionError = '',
+  inviteMode,
+  navigate,
+  actionError,
   clearActionError,
 }: {
   api: Api;
   action: Action;
   busy: boolean;
-  actionError?: string;
-  clearActionError?: () => void;
+  inviteMode: boolean;
+  navigate: (invite: boolean) => void;
+  actionError: string;
+  clearActionError: () => void;
 }) {
   const [invite, setInvite] = useState(''),
-    [first, setFirst] = useState(false),
-    [inviteInvalid, setInviteInvalid] = useState(false),
-    [error, setError] = useState('');
-  const failure = error || actionError;
-  function clearError() {
-    setError('');
-    setInviteInvalid(false);
-    clearActionError?.();
-  }
-  function login() {
-    setError('');
-    void action(async () => {
+    [invalid, setInvalid] = useState(false);
+  async function register() {
+    setInvalid(false);
+    await action(async () => {
       try {
-        await passkeyLogin(api);
-      } catch (problem) {
-        setError('Повторите вход с passkey своего профиля.');
-        throw problem;
+        const issued = await api('auth/passkey/register-options', { invite: invite.trim() });
+        const response = await startRegistration({
+          optionsJSON: issued.options as PublicKeyCredentialCreationOptionsJSON,
+        });
+        await api('auth/passkey/register', { requestId: issued.requestId, response });
+        setInvite('');
+      } catch (error) {
+        setInvalid(/INVITE/.test((error as { code?: string }).code ?? ''));
+        throw error;
       }
     });
   }
-  return (
-    <div className={'login-controls' + (first ? ' invite-login' : '')}>
-      {first ? (
-        <form
-          className="task-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setError('');
-            setInviteInvalid(false);
-            void action(async () => {
-              try {
-                const issued = await api('auth/passkey/register-options', {
-                  invite: invite.trim(),
-                });
-                const response = await startRegistration({
-                  optionsJSON: issued.options as PublicKeyCredentialCreationOptionsJSON,
-                });
-                await api('auth/passkey/register', { requestId: issued.requestId, response });
-                setInvite('');
-              } catch (problem) {
-                const invalid = /INVITE/.test((problem as { code?: string }).code ?? '');
-                setInviteInvalid(invalid);
-                setError(
-                  invalid
-                    ? 'Код истёк или уже использован.'
-                    : problem instanceof Error
-                      ? problem.message
-                      : 'Не удалось создать passkey. Повторите попытку.',
-                );
-                throw problem;
-              }
-            });
-          }}
-        >
-          <Field label="Код приглашения">
-            <input
-              required
-              autoComplete="off"
-              spellCheck={false}
-              value={invite}
-              maxLength={43}
-              aria-invalid={inviteInvalid}
-              aria-describedby={inviteInvalid && error ? 'login-error' : undefined}
-              onChange={(event) => {
-                setInvite(event.target.value);
-                clearError();
-              }}
-            />
-          </Field>
-          {inviteInvalid && error && (
-            <p className="inline-error" id="login-error" role="alert">
-              {failure}
-            </p>
-          )}
-          <div className="login-actions">
-            <TaskButton
-              type="button"
-              variant="text"
-              className="login-switch"
-              disabled={busy}
-              onClick={() => {
-                setFirst(false);
-                setError('');
-                clearActionError?.();
-              }}
-            >
-              Уже есть passkey? Войти
-            </TaskButton>
-            <TaskButton
-              type="submit"
-              className="passkey-login"
-              disabled={busy}
-              loading={busy}
-              aria-label="Создать passkey"
-            >
-              <DesignAsset name="login-KeyIcon" />
-              Создать passkey
-            </TaskButton>
-          </div>
-        </form>
-      ) : (
+  return inviteMode ? (
+    <InstallerScreen
+      title="Первый вход"
+      actions={
         <>
-          <div className="login-actions">
-            <TaskButton
-              className="passkey-login"
-              disabled={busy}
-              onClick={login}
-              loading={busy}
-              aria-label="Войти с passkey"
-            >
-              <DesignAsset name="login-KeyIcon" />
-              Войти с passkey
-            </TaskButton>
-            <TaskButton
-              variant="text"
-              className="login-switch"
-              disabled={busy}
-              onClick={() => {
-                setFirst(true);
-                setError('');
-                clearActionError?.();
-              }}
-            >
-              Первый вход
-            </TaskButton>
-          </div>
+          <TaskButton type="submit" form="installer-invite" disabled={busy} loading={busy}>
+            Создать passkey
+          </TaskButton>
+          <TaskButton
+            variant="text"
+            disabled={busy}
+            onClick={() => {
+              clearActionError();
+              navigate(false);
+            }}
+          >
+            Уже есть профиль? Войти
+          </TaskButton>
         </>
+      }
+    >
+      <form
+        id="installer-invite"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void register();
+        }}
+      >
+        <Field label="Код приглашения">
+          <input
+            required
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={43}
+            value={invite}
+            aria-invalid={invalid}
+            aria-describedby={invalid ? 'invite-error' : undefined}
+            onChange={(event) => {
+              setInvite(event.target.value);
+              setInvalid(false);
+              clearActionError();
+            }}
+          />
+        </Field>
+        {actionError && (
+          <p role="alert" id="invite-error" className="installer-error">
+            {invalid ? 'Код истёк или уже использован.' : actionError}
+          </p>
+        )}
+      </form>
+    </InstallerScreen>
+  ) : (
+    <InstallerScreen
+      centered
+      welcome
+      actions={
+        <>
+          <TaskButton
+            disabled={busy}
+            loading={busy}
+            onClick={() =>
+              void action(async () => {
+                await passkeyLogin(api);
+              })
+            }
+          >
+            Войти с passkey
+          </TaskButton>
+          <TaskButton
+            variant="text"
+            disabled={busy}
+            onClick={() => {
+              clearActionError();
+              navigate(true);
+            }}
+          >
+            Есть приглашение
+          </TaskButton>
+        </>
+      }
+    >
+      <div className="installer-welcome">
+        <Image src="/brand/isign-mark.svg" width={144} height={144} alt="Знак iSign" priority />
+        <h1>iSign</h1>
+      </div>
+      {actionError && (
+        <p className="installer-error" role="alert">
+          {actionError}
+        </p>
       )}
-      {!inviteInvalid && failure && <Toast message={failure} onClose={clearError} />}
-    </div>
+    </InstallerScreen>
   );
 }
